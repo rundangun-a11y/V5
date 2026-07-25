@@ -601,6 +601,150 @@ function srsWeightedPick(list, statsObj, count) {
   return result;
 }
 
+/* 🧠 장기기억 현황판 — 카드찾기(hs, 재인)·쓰기(hw, 회상)·읽기(hr, 발화) 세 게임의
+   SRS 통계(srsStage/lastReviewAt)를 종합해 글자 하나하나가 "지금 장기기억에 얼마나
+   잘 저장돼 있는지"를 하나의 등급으로 판정합니다.
+   - 회상(직접 산출)인 쓰기(hw)가 재인(hs)·발화(hr)보다 더 엄격한 증거라고 보고
+     가중치를 2배로 둡니다.
+   - 아무 게임에서도 안 풀어본 글자는 '미학습'.
+   - 쓰기 기준 간격이 7일 이상(SRS 4단계 이상) 벌어졌고 유지율도 높으면 '장기기억 정착'.
+   - 종합 유지율이 낮으면(=최근에 잊었을 가능성이 큼) '복습 필요', 그 사이는 '학습 중' */
+function computeLtmStatus(ch) {
+  const now = Date.now();
+
+  function channelInfo(name, weight, stat) {
+    const attempted = (stat.correct + stat.wrong) > 0;
+    const retention = attempted ? (1 - srsForgetProbability(stat, now)) : null;
+    const stage = typeof stat.srsStage === 'number' ? stat.srsStage : 0;
+    return { name, weight, attempted, retention, stage, correct: stat.correct, wrong: stat.wrong, lastReviewAt: stat.lastReviewAt };
+  }
+
+  const channels = [
+    channelInfo('카드찾기', 1, hsStats.getStat(ch)),
+    channelInfo('쓰기', 2, hwStats.getStat(ch)),
+    channelInfo('읽기', 1, hrStats.getStat(ch))
+  ];
+  const attemptedChannels = channels.filter(c => c.attempted);
+
+  if (attemptedChannels.length === 0) {
+    return { level: 'none', label: '미학습', avgRetention: null, channels };
+  }
+
+  const weightSum = attemptedChannels.reduce((s, c) => s + c.weight, 0);
+  const avgRetention = attemptedChannels.reduce((s, c) => s + c.retention * c.weight, 0) / weightSum;
+
+  const writingChannel = channels[1];
+  const writingStable = writingChannel.attempted && writingChannel.stage >= 4 && writingChannel.retention >= 0.85;
+
+  let level, label;
+  if (writingStable && avgRetention >= 0.8) {
+    level = 'stable'; label = '🟢 장기기억 정착';
+  } else if (avgRetention < 0.5) {
+    level = 'review'; label = '🔴 복습 필요';
+  } else {
+    level = 'progress'; label = '🟡 학습 중';
+  }
+  return { level, label, avgRetention, channels };
+}
+
+/* 46자 오십음도 그리드에 종합 등급(정착/학습중/복습필요/미학습)을 색상으로 렌더링하고,
+   상단에 등급별 글자 수 요약을 보여줍니다. 패널을 열 때마다 최신 localStorage 값을
+   다시 불러와서(load) 다른 게임에서 방금 갱신된 기록도 바로 반영합니다 */
+function renderLtmDashboard() {
+  hsStats.load();
+  hwStats.load();
+  hrStats.load();
+
+  const grid = document.getElementById('ltmStatGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  closeLtmDetail();
+
+  grid.appendChild(document.createElement('div'));
+  HS_COL_HEADS.forEach(head => {
+    const h = document.createElement('div');
+    h.className = 'hs-stat-colhead';
+    h.textContent = head;
+    grid.appendChild(h);
+  });
+
+  const counts = { stable: 0, progress: 0, review: 0, none: 0 };
+  const colorClassByLevel = {
+    stable: 'hs-stat-green',
+    progress: 'hs-stat-yellow',
+    review: 'hs-stat-red',
+    none: 'hs-stat-neutral'
+  };
+
+  HS_TABLE_ROWS.forEach(row => {
+    const rowHead = document.createElement('div');
+    rowHead.className = 'hs-stat-rowhead';
+    rowHead.textContent = row.label;
+    grid.appendChild(rowHead);
+
+    row.chars.forEach(ch => {
+      if (!ch) {
+        grid.appendChild(document.createElement('div'));
+        return;
+      }
+      const status = computeLtmStatus(ch);
+      counts[status.level] += 1;
+
+      const cell = document.createElement('div');
+      cell.className = 'hs-stat-cell ' + colorClassByLevel[status.level];
+      const pctText = status.avgRetention === null ? '' : Math.round(status.avgRetention * 100) + '%';
+      cell.innerHTML = `
+        <span class="hs-stat-ch">${ch}</span>
+        <span class="ltm-stat-pct">${pctText}</span>
+      `;
+      cell.addEventListener('click', () => showLtmDetail(ch, status));
+      grid.appendChild(cell);
+    });
+  });
+
+  const stableEl = document.getElementById('ltmCountStable');
+  const progressEl = document.getElementById('ltmCountProgress');
+  const reviewEl = document.getElementById('ltmCountReview');
+  const noneEl = document.getElementById('ltmCountNone');
+  if (stableEl) stableEl.textContent = counts.stable;
+  if (progressEl) progressEl.textContent = counts.progress;
+  if (reviewEl) reviewEl.textContent = counts.review;
+  if (noneEl) noneEl.textContent = counts.none;
+}
+
+/* 그리드의 글자 칸을 누르면 게임별(카드찾기/쓰기/읽기) 정답·오답 횟수, 유지율(%),
+   마지막 복습 시점을 자세히 보여줍니다 */
+function showLtmDetail(ch, status) {
+  const box = document.getElementById('ltmDetailBox');
+  if (!box) return;
+  const now = Date.now();
+
+  const rowsHtml = status.channels.map(c => {
+    if (!c.attempted) {
+      return `<div class="ltm-detail-row"><b>${c.name}</b><span>아직 안 풀어봤어요</span></div>`;
+    }
+    const pct = Math.round(c.retention * 100);
+    const daysAgo = c.lastReviewAt ? Math.floor((now - c.lastReviewAt) / SRS_MS_PER_DAY) : null;
+    const agoText = daysAgo === null ? '' : (daysAgo <= 0 ? ' · 오늘 복습' : ` · ${daysAgo}일 전 복습`);
+    return `<div class="ltm-detail-row"><b>${c.name}</b><span>정답 ${c.correct} · 오답 ${c.wrong} · 유지율 약 ${pct}%${agoText}</span></div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="ltm-detail-header">
+      <span class="ltm-detail-ch">${ch}</span>
+      <span class="ltm-detail-label">${status.label}</span>
+      <button class="ltm-detail-close" onclick="closeLtmDetail()">✕</button>
+    </div>
+    ${rowsHtml}
+  `;
+  box.style.display = 'block';
+}
+
+function closeLtmDetail() {
+  const box = document.getElementById('ltmDetailBox');
+  if (box) box.style.display = 'none';
+}
+
 /* ⚡ 히라가나 스피드게임 - 문제마다 보여줄 카드 개수(정답 카드 포함, 2~4장)
    브라우저에 저장되어 다음 플레이에도 선택했던 개수가 유지됩니다 */
 const HS_CARD_COUNT_KEY = 'kotobaHsCardCount';
@@ -8661,11 +8805,16 @@ const TOP_MENU_EXTRA_ITEMS = [
     id: 'videos', title: '히라가나 영상', emoji: '🎬',
     desc: '일본 学研키즈TV의 히라가나 학습 영상 시리즈를 봐요',
     action: () => openMenuPanel('menuVideosLevel')
+  },
+  {
+    id: 'ltm', title: '장기기억 현황', emoji: '🧠',
+    desc: '히라가나 글자별로 장기기억에 얼마나 잘 저장됐는지 확인해요',
+    action: () => { openMenuPanel('menuLtmLevel'); renderLtmDashboard(); }
   }
 ];
 
 function hideAllMenuPanels(){
-  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel'].forEach(id => {
+  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });

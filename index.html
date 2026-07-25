@@ -209,6 +209,7 @@
   body.game-fullscreen #menuSettingsLevel,
   body.game-fullscreen #menuWordcardsLevel,
   body.game-fullscreen #menuVideosLevel,
+  body.game-fullscreen #menuLtmLevel,
   body.game-fullscreen .log-title,
   body.game-fullscreen .log-list,
   body.game-fullscreen .gallery-title,
@@ -1334,6 +1335,90 @@
   .hs-stat-cell.hs-stat-green   { background: #dcf3dd; border-color: #9ccf9f; }
   .hs-stat-cell.hs-stat-yellow  { background: #fbecc2; border-color: #e0c368; }
   .hs-stat-cell.hs-stat-red     { background: #f8d6d2; border-color: #e59a8f; }
+
+  /* 🧠 장기기억 현황판 전용 스타일 —
+     46자 그리드는 기존 hs-stat-grid/hs-stat-cell을 그대로 재사용하고,
+     칸 아래에 종합 기억 유지율(%)만 작게 덧붙입니다 */
+  .hs-stat-cell .ltm-stat-pct {
+    position: absolute;
+    bottom: 2px;
+    left: 0; right: 0;
+    text-align: center;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 700;
+    font-size: 8px;
+    line-height: 1;
+    color: #7a7364;
+  }
+  .ltm-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: 14px 0 4px;
+  }
+  .ltm-summary-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--sumi);
+  }
+  .ltm-summary-chip i {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .ltm-detail-box {
+    display: none;
+    background: #fff;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .ltm-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .ltm-detail-ch {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 26px;
+    color: var(--sumi);
+  }
+  .ltm-detail-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--indigo);
+    flex: 1;
+  }
+  .ltm-detail-close {
+    border: none;
+    background: none;
+    font-size: 15px;
+    color: #8a8272;
+    cursor: pointer;
+    padding: 2px 6px;
+  }
+  .ltm-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+    color: #5b5648;
+    padding: 4px 0;
+    border-top: 1px dashed var(--line);
+  }
+  .ltm-detail-row:first-of-type { border-top: none; }
+  .ltm-detail-row b { color: var(--sumi); min-width: 56px; }
   .hs-stat-legend {
     display: flex;
     flex-wrap: wrap;
@@ -5341,6 +5426,33 @@
   </div>
 </div>
 
+</div>
+
+<div class="menu-level" id="menuLtmLevel" style="display:none;">
+  <div class="menu-category-header">
+    <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+    <div class="menu-category-title">🧠 장기기억 현황</div>
+    <span style="width:64px;"></span>
+  </div>
+
+  <div class="video-desc">히라가나 카드찾기(재인)·히라가나 쓰기(회상)·히라가나 읽기(발화) 세 게임의 기록을 에빙하우스 망각곡선으로 계산해, 지금 이 글자가 장기기억에 얼마나 잘 저장돼 있는지 보여줘요. 칸을 눌러보면 게임별 자세한 기록도 볼 수 있어요.</div>
+
+  <div class="ltm-summary-row">
+    <span class="ltm-summary-chip"><i style="background:#dcf3dd; border:1.5px solid #9ccf9f;"></i>장기기억 정착 <span id="ltmCountStable">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#fbecc2; border:1.5px solid #e0c368;"></i>학습 중 <span id="ltmCountProgress">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#f8d6d2; border:1.5px solid #e59a8f;"></i>복습 필요 <span id="ltmCountReview">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#fff; border:1.5px solid var(--line);"></i>미학습 <span id="ltmCountNone">0</span>자</span>
+  </div>
+
+  <div class="hs-stat-grid" id="ltmStatGrid"></div>
+  <div class="hs-stat-legend">
+    <span><i style="background:#dcf3dd; border:1.5px solid #9ccf9f;"></i>장기기억 정착</span>
+    <span><i style="background:#fbecc2; border:1.5px solid #e0c368;"></i>학습 중</span>
+    <span><i style="background:#f8d6d2; border:1.5px solid #e59a8f;"></i>복습 필요</span>
+    <span><i style="background:#fff; border:1.5px solid var(--line);"></i>아직 안 풀어본 글자</span>
+  </div>
+
+  <div class="ltm-detail-box" id="ltmDetailBox"></div>
 </div>
 
 <script src="./data.js"></script>
