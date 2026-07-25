@@ -1,0 +1,5350 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>こえ — 소리로 배우는 일본어 & 퀴즈</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#B7410E">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="こえ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --washi:#F7F1E3;
+    --washi-deep:#EFE6D0;
+    --sumi:#211D19;
+    --indigo:#2B3A55;
+    --hanko:#B7410E;
+    --gold:#B8892F;
+    --sage:#6E7F5C;
+    --line: rgba(33,29,25,0.12);
+    --correct: #2e7d32;
+    --wrong: #c62828;
+    --wrong-gentle: #B8892F;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at top right, rgba(184,137,47,0.08), transparent 55%),
+      radial-gradient(ellipse at bottom left, rgba(43,58,85,0.06), transparent 55%),
+      var(--washi);
+    font-family:'Noto Sans KR', sans-serif;
+    color:var(--sumi);
+    min-height:100vh;
+    padding: 28px 18px 60px;
+  }
+  .wrap{max-width:760px;margin:0 auto;}
+
+  /* header */
+  header{display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap;}
+  .brush-title{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:44px;
+    color:var(--sumi);
+    letter-spacing:0.02em;
+    position:relative;
+  }
+  .brush-title::after{
+    content:"";
+    position:absolute;
+    left:2px; right:2px; bottom:-6px;
+    height:6px;
+    background:var(--hanko);
+    opacity:0.85;
+    transform:skewX(-8deg);
+  }
+  .subtitle{font-size:13.5px;color:#6b6355;font-weight:500;}
+  header p.desc{margin:14px 0 26px; font-size:14.5px; line-height:1.7; color:#4a453c; max-width:56ch;}
+
+  /* Mode Switch Tabs */
+  .tabs{
+    display: flex;
+    flex-wrap: wrap; /* 스크롤 대신 한눈에 보이도록 자동 줄바꿈 허용 */
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 1.5px dashed var(--line); /* 구분감을 높이기 위한 점선 스타일 테두리 */
+    padding-bottom: 12px;
+  }
+  .tab-btn{
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 20px; /* 기존의 딱딱한 느낌에서 둥근 필 형태로 변경하여 전체 디자인 조화 극대화 */
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--sumi);
+    position: relative;
+    transition: all 0.2s ease;
+    flex: 1 1 auto; /* 화면 너비에 맞추어 빈 공간을 균등하게 차지 */
+    text-align: center;
+    white-space: nowrap;
+  }
+  .tab-btn:hover{
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .tab-btn:active{
+    transform: translateY(0);
+  }
+  .tab-btn.active{
+    background: var(--hanko); /* 전통 수제 스탬프(인감)의 짙은 주홍빛 컬러 반영 */
+    color: var(--washi);
+    border-color: var(--hanko);
+  }
+  .tab-btn.active::after{
+    display: none; /* 필 스타일 배경을 사용하므로 하단 언더라인 삭제 */
+  }
+  
+  .mode-content { display: none; }
+  .mode-content.active { display: block; }
+
+  /* 기존 탭 바는 새 계층형 메뉴(상위→하위→게임)로 대체되어 화면에 노출하지 않지만,
+     내부 로직(switchMode)이 여전히 이 버튼들의 active 클래스를 참조하므로 DOM에는 유지합니다 */
+  .tabs { display: none !important; }
+
+  /* 🗂️ 상위 메뉴 → 하위 메뉴 → 게임 화면 계층 네비게이션 */
+  .menu-level { margin-bottom: 22px; }
+  .menu-desc {
+    font-size: 13.5px;
+    color: #7a7364;
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+  .menu-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+  }
+  .menu-card {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 16px;
+    padding: 22px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .menu-card:hover {
+    background: #fff;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.09);
+  }
+  .menu-card-emoji { font-size: 42px; margin-bottom: 10px; line-height: 1; }
+  .menu-card-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--indigo);
+  }
+  .menu-card-sub { font-size: 11.5px; color: #8a8272; margin-top: 6px; line-height: 1.45; }
+  .menu-category-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .menu-category-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 19px;
+    color: var(--hanko);
+    flex: 1;
+    text-align: center;
+  }
+
+  /* 🖥️ 게임 실행 화면 — 게임을 고르기 전에는 숨겨두고, 실행 시 뷰포트 전체를 덮어 집중할 수 있게 합니다 */
+  #gameScreenContainer { display: none; }
+  #gameScreenContainer.game-active {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: var(--washi);
+    overflow-y: auto;
+    padding: 68px 18px 40px;
+  }
+  #gameBackBtn {
+    display: none;
+  }
+  #gameScreenContainer.game-active #gameBackBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 1001;
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 20px;
+    padding: 9px 16px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  #gameScreenContainer.game-active #gameBackBtn:hover { background: #fff; }
+
+  /* 게임 전체화면 상태에서는 상단 메뉴/설정 영역을 감추어 콘텐츠에 집중하게 합니다 */
+  body.game-fullscreen header,
+  body.game-fullscreen p.desc,
+  body.game-fullscreen .age-level-box,
+  body.game-fullscreen .babytalk-box,
+  body.game-fullscreen #menuTopLevel,
+  body.game-fullscreen #menuCategoryLevel,
+  body.game-fullscreen #menuSettingsLevel,
+  body.game-fullscreen #menuWordcardsLevel,
+  body.game-fullscreen #menuVideosLevel,
+  body.game-fullscreen .log-title,
+  body.game-fullscreen .log-list,
+  body.game-fullscreen .gallery-title,
+  body.game-fullscreen .gallery-desc,
+  body.game-fullscreen .gallery,
+  body.game-fullscreen footer {
+    display: none !important;
+  }
+
+  /* mic control */
+  .control-row{display:flex; align-items:center; gap:16px; margin-bottom:22px; flex-wrap:wrap;}
+  .mic-btn{
+    width:76px; height:76px; border-radius:50%;
+    border:2px solid var(--sumi);
+    background:var(--washi);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    position:relative;
+    transition: transform .15s ease, background .2s ease, box-shadow .2s ease;
+    flex-shrink:0;
+  }
+  .mic-btn:hover{transform:translateY(-1px);}
+  .mic-btn svg{width:28px;height:28px;fill:var(--sumi);}
+  .mic-btn.listening{
+    background:var(--hanko);
+    border-color:var(--hanko);
+    box-shadow: 0 0 0 0 rgba(183,65,14,0.5);
+    animation: pulse 1.6s infinite;
+  }
+  .mic-btn.listening svg{fill:var(--washi);}
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(183,65,14,0.45); }
+    70%{ box-shadow:0 0 0 16px rgba(183,65,14,0); }
+    100%{ box-shadow:0 0 0 0 rgba(183,65,14,0); }
+  }
+  .status-block{display:flex;flex-direction:column;gap:4px;}
+  .status-label{font-weight:700; font-size:14px;}
+  .status-sub{font-size:12.5px; color:#7a7364;}
+  .unsupported-msg{
+    font-size:13px; color:var(--hanko); background:#fff3ec; border:1px solid #f0c9b3;
+    padding:10px 14px; border-radius:10px; max-width:100%;
+  }
+
+  /* stream area (paper scroll) */
+  .paper{
+    background:var(--washi-deep);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:26px 24px;
+    min-height:130px;
+    position:relative;
+    overflow:hidden;
+    margin-bottom:18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .paper::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(rgba(33,29,25,0.035) 0 1px, transparent 1px 34px);
+    pointer-events:none;
+  }
+  .stream{
+    font-family:'Shippori Mincho', serif;
+    font-size:40px;
+    line-height:1.3;
+    letter-spacing:0.04em;
+    color:var(--sumi);
+    min-height:52px;
+    word-break:break-all;
+    position:relative;
+    z-index:1;
+  }
+  .stream .ch{
+    display:inline-block;
+    opacity:0;
+    transform: translateY(10px) scale(0.85);
+    animation: appear .28s cubic-bezier(.2,.9,.3,1.3) forwards;
+  }
+  .stream .ch.matched{ color:var(--hanko); }
+  @keyframes appear{
+    to{ opacity:1; transform:translateY(0) scale(1); }
+  }
+  .placeholder{
+    font-family:'Noto Sans KR',sans-serif;
+    font-size:13.5px;
+    color:#9c9484;
+    position:relative; z-index:1;
+  }
+
+  /* matched word stamp card */
+  .stamp-zone{min-height:150px; display:flex; align-items:center; justify-content:center; margin-bottom:26px;}
+  .stamp-card{
+    display:none;
+    background:var(--washi);
+    border:2px solid var(--sumi);
+    border-radius:16px;
+    padding:22px 30px;
+    align-items:center;
+    gap:22px;
+    position:relative;
+    animation: stampDown .35s cubic-bezier(.2,.8,.3,1.4);
+  }
+  .stamp-card.show{display:flex;}
+  @keyframes stampDown{
+    0%{ opacity:0; transform: scale(1.5) rotate(-8deg); }
+    60%{ opacity:1; }
+    100%{ opacity:1; transform: scale(1) rotate(-2deg); }
+  }
+  .stamp-emoji{font-size:56px; line-height:1;}
+  .stamp-text .jp{font-family:'Shippori Mincho',serif; font-size:26px; font-weight:700;}
+  .stamp-text .romaji{font-size:12.5px; color:#8a8272; margin-top:2px;}
+  .stamp-text .kr{font-size:15px; color:var(--indigo); font-weight:700; margin-top:6px;}
+  .stamp-seal{
+    position:absolute; top:-10px; right:-10px;
+    width:38px;height:38px;border-radius:50%;
+    background:var(--hanko); color:var(--washi);
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px; font-weight:900; font-family:'Shippori Mincho',serif;
+    border:2px solid var(--washi);
+    box-shadow:0 2px 6px rgba(0,0,0,0.25);
+  }
+
+  /* Game containers (Quiz, Audio Emoji & Writing & Matching) */
+  .quiz-container, .audio-emoji-container, .writing-container, .matching-container, .pronounce-container, .sentence-container, .scene-container, .storybook-container, .riddle-container, .qa-container, .spelling-container {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 30px 24px;
+    text-align: center;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .quiz-score-board {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--indigo);
+    margin-bottom: 20px;
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 10px;
+  }
+  .quiz-emoji, .writing-emoji {
+    font-size: 80px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+
+  /* 🏷️ 이모지 오른쪽 위에 품사(명사/동사/형용사 등)를 작은 태그로 표시합니다.
+     이모지만으로 뜻을 유추하기 어려울 때, 품사 정보가 힌트가 되어줍니다. */
+  .emoji-pos-wrap {
+    position: relative;
+    display: inline-block;
+    line-height: 1;
+  }
+  .pos-badge {
+    position: absolute;
+    top: -2px;
+    right: -14px;
+    transform: translate(0, -50%);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 7px;
+    background: var(--indigo, #3B4C7C);
+    color: #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    border: 1.5px solid var(--washi, #fff);
+    font-family: 'Noto Sans KR', sans-serif;
+    z-index: 3;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .pos-badge.pos-noun   { background: #3B6E9C; }
+  .pos-badge.pos-verb   { background: #4C8C5B; }
+  .pos-badge.pos-adj    { background: #C97C3D; }
+  .pos-badge.pos-adv    { background: #8A5FB0; }
+  .pos-badge.pos-pron   { background: #2E9C9C; }
+  .pos-badge.pos-num    { background: #6B6B6B; }
+  .pos-badge.pos-interj { background: #C0466B; }
+  /* 단어 카드 갤러리 이모지 오른쪽 위에 붙는 카테고리 배지 (품사 배지와 같은 자리를 사용) */
+  .category-badge {
+    position: absolute;
+    top: -4px;
+    right: -12px;
+    font-size: 13px;
+    line-height: 1;
+    background: #fff;
+    border: 1.5px solid var(--washi, #fff);
+    border-radius: 50%;
+    padding: 2px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .gcard .emo .category-badge {
+    font-size: 11px;
+    top: -2px;
+    right: -9px;
+  }
+  /* 작은 카드/버튼 안에서는 태그가 상대적으로 크게 보이므로 살짝 축소합니다 */
+  .emoji-btn .pos-badge,
+  .onomatopoeia-card-emoji .pos-badge,
+  .ws-emoji-icon .pos-badge,
+  .card-front.emoji-node .pos-badge,
+  .gcard .emo .pos-badge,
+  .linematch-item .pos-badge,
+  .log-chip .pos-badge {
+    font-size: 9px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    top: -1px;
+    right: -11px;
+  }
+  
+  /* Audio Emoji Mode Specific Styles */
+  .audio-prompt-box {
+    margin: 20px 0;
+  }
+  .sound-wave-icon {
+    font-size: 64px;
+    animation: wavePulse 1.5s infinite ease-in-out;
+  }
+  @keyframes wavePulse {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+  }
+  .audio-emoji-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .emoji-btn {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 20px;
+    font-size: 44px;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100px;
+  }
+  .emoji-btn:hover {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .emoji-btn.correct {
+    background: var(--correct) !important;
+    border-color: var(--correct) !important;
+  }
+  .emoji-btn.correct-hint {
+    border-color: var(--correct) !important;
+    border-width: 3px !important;
+  }
+  .emoji-btn.wrong {
+    background: var(--wrong) !important;
+    border-color: var(--wrong) !important;
+    animation: shake 0.3s ease-in-out;
+  }
+  .emoji-btn .btn-text-sub {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--sumi);
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  /* 🤔 리들 게임 등에서 이모지 아래에 히라가나와 한글 뜻을 두 줄로 보여줄 때 사용 */
+  .emoji-btn .btn-text-jp {
+    display: block;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--sumi);
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .emoji-btn .btn-text-kr {
+    display: block;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #8a8272;
+    margin-top: 2px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .emoji-btn.correct .btn-text-jp, .emoji-btn.correct .btn-text-kr,
+  .emoji-btn.correct-hint .btn-text-jp, .emoji-btn.correct-hint .btn-text-kr,
+  .emoji-btn.wrong .btn-text-jp, .emoji-btn.wrong .btn-text-kr {
+    opacity: 1;
+    color: #fff !important;
+  }
+  .emoji-btn.correct-hint .btn-text-jp, .emoji-btn.correct-hint .btn-text-kr {
+    color: var(--sumi) !important;
+  }
+  /* 🎈➡️🎈 이모지만으로는 뜻을 연상하기 어려운 단어를 위한 커스텀 SVG 아이콘 */
+  .custom-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .custom-icon-svg {
+    width: 44px;
+    height: 44px;
+  }
+  .emoji-btn.correct .btn-text-sub, 
+  .emoji-btn.correct-hint .btn-text-sub, 
+  .emoji-btn.wrong .btn-text-sub {
+    opacity: 1;
+    color: #fff !important;
+  }
+  .emoji-btn.correct-hint .btn-text-sub {
+    color: var(--sumi) !important;
+  }
+
+  /* 🔤 스펠링 게임(글자 순서 맞히기) 스타일 */
+  .spelling-kr-hint {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--indigo);
+    margin-top: 8px;
+  }
+  .spelling-answer-slots {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 20px 0 6px;
+  }
+  .spelling-slot {
+    width: 46px;
+    height: 46px;
+    border: 2px solid var(--sumi);
+    border-radius: 10px;
+    background: var(--washi);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--sumi);
+  }
+  .spelling-slot.filled {
+    background: #fff;
+    border-color: var(--correct);
+    animation: quizAppear .3s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .spelling-letter-options {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 16px 0 4px;
+  }
+  .letter-btn {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 54px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .letter-btn:hover {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .letter-btn.used {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .letter-btn.wrong {
+    background: var(--wrong) !important;
+    border-color: var(--wrong) !important;
+    color: #fff;
+    animation: shake 0.3s ease-in-out;
+  }
+  body.gentle-mode .letter-btn.wrong {
+    background: var(--wrong-gentle) !important;
+    border-color: var(--wrong-gentle) !important;
+  }
+  .spelling-emoji-reveal {
+    margin-top: 18px;
+  }
+  .spelling-emoji-big {
+    font-size: 72px;
+    line-height: 1.2;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+
+  /* 🔍 낱말 찾기 퍼즐 게임 스타일 */
+  .ws-size-row {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin: 4px 0 16px;
+    flex-wrap: wrap;
+  }
+  .ws-size-btn {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .ws-size-btn:hover { background: #fff; }
+  .ws-size-btn.active {
+    background: var(--hanko);
+    border-color: var(--hanko);
+    color: var(--washi);
+  }
+  .ws-emoji-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin: 4px 0 20px;
+    flex-wrap: wrap;
+  }
+  .ws-emoji-box {
+    min-width: 62px;
+    min-height: 62px;
+    border-radius: 14px;
+    border: 2px solid var(--sumi);
+    background: var(--washi);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 8px;
+    filter: grayscale(1) opacity(0.35);
+    transition: all 0.25s ease;
+  }
+  .ws-emoji-icon {
+    font-size: 32px;
+    line-height: 1;
+    position: relative;
+    display: inline-block;
+  }
+  .ws-emoji-jp, .ws-emoji-kr {
+    display: none;
+    text-align: center;
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+  .ws-emoji-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 12.5px;
+    color: var(--sumi);
+    margin-top: 2px;
+  }
+  .ws-emoji-kr {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 500;
+    font-size: 10.5px;
+    color: #7a7364;
+  }
+  .ws-emoji-box.found {
+    filter: none;
+    background: #fff;
+    border-color: var(--correct);
+    box-shadow: 0 4px 10px rgba(46,125,50,0.18);
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .ws-emoji-box.found .ws-emoji-jp,
+  .ws-emoji-box.found .ws-emoji-kr {
+    display: block;
+  }
+  .ws-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    max-width: 420px;
+    margin: 0 auto;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  .ws-cell {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: clamp(13px, 3.6vw, 19px);
+    color: var(--sumi);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  }
+  .ws-cell.selecting {
+    background: var(--gold);
+    color: #fff;
+    border-color: var(--gold);
+    transform: scale(1.05);
+  }
+  .ws-cell.wrong-flash {
+    background: var(--wrong) !important;
+    color: #fff;
+    border-color: var(--wrong) !important;
+    animation: shake 0.3s ease-in-out;
+  }
+  body.gentle-mode .ws-cell.wrong-flash {
+    background: var(--wrong-gentle) !important;
+    border-color: var(--wrong-gentle) !important;
+  }
+  .ws-cell.found-0 { background: #cfe8d3; border-color: var(--correct); color: var(--sumi); }
+  .ws-cell.found-1 { background: #d6e0f0; border-color: var(--indigo); color: var(--sumi); }
+  .ws-cell.found-2 { background: #f6ddc4; border-color: var(--gold); color: var(--sumi); }
+  .ws-cell.found-3 { background: #f3d2cf; border-color: var(--hanko); color: var(--sumi); }
+  .ws-feedback {
+    text-align: center;
+    min-height: 22px;
+    margin-top: 16px;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--sumi);
+  }
+  .ws-feedback.wrong { color: var(--wrong); }
+  body.gentle-mode .ws-feedback.wrong { color: var(--wrong-gentle); }
+  .ws-feedback.correct { color: var(--correct); }
+  .ws-cell.hint {
+    background: var(--gold) !important;
+    border-color: var(--gold) !important;
+    color: #fff !important;
+    animation: wsHintPulse 0.7s ease-in-out infinite;
+  }
+  @keyframes wsHintPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+  .ws-btn-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+  }
+  .ws-new-btn {
+    display: block;
+    margin: 0;
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 20px;
+    padding: 9px 20px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+  }
+  .ws-new-btn:hover { background: #fff; }
+  .ws-new-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* 🤔 '나는 무엇일까요?' 수수께끼 게임 스타일 */
+  .riddle-question-title {
+    font-size: 18px;
+    font-weight: 900;
+    color: var(--sumi);
+    margin-bottom: 16px;
+  }
+  .riddle-hint-list {
+    text-align: left;
+    margin-bottom: 6px;
+  }
+  .riddle-hint-item {
+    padding: 2px;
+    margin-bottom: 0;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--sumi);
+  }
+  .riddle-hint-kr {
+    display: inline;
+    font-size: 13.5px;
+    color: #8a8272;
+  }
+  .video-desc {
+    font-size: 13px;
+    color: #8a8272;
+    text-align: center;
+    margin: 4px 0 14px;
+    line-height: 1.5;
+  }
+  .video-frame-wrap {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 비율 */
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid var(--sumi);
+    background: #000;
+  }
+  .video-frame-wrap iframe {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border: 0;
+  }
+  /* 🎤 히라가나 읽기 게임: 왼쪽엔 문제 글자, 오른쪽엔 음성으로 인식된 글자를 나란히 보여줌 */
+  .hr-attempt-label {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #fff;
+    background: var(--hanko);
+    border-radius: 999px;
+    padding: 3px 12px;
+    margin-bottom: 12px;
+  }
+  .hr-columns {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .hr-column {
+    flex: 1;
+    max-width: 160px;
+    background: var(--washi);
+    border: 2px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .hr-column-label {
+    font-size: 12px;
+    color: #8a8272;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .hr-target-char {
+    font-size: 64px;
+    font-weight: 800;
+    color: var(--sumi);
+    line-height: 1;
+  }
+  .hr-recognized-char {
+    font-size: 48px;
+    font-weight: 800;
+    color: var(--hanko);
+    line-height: 1;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hr-recognized-char.listening {
+    animation: pulseListening 1s ease-in-out infinite;
+  }
+  .hr-recognized-char.preparing {
+    color: #b7ab94;
+    opacity: 0.6;
+  }
+  @keyframes pulseListening {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  .riddle-hint-counter {
+    font-size: 12.5px;
+    color: #9c9484;
+    margin: 8px 0 4px;
+  }
+  .riddle-feedback {
+    min-height: 22px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--hanko);
+    margin-top: 12px;
+  }
+
+  /* ❓ '질문에 답하기' 게임 스타일 */
+  .qa-emoji {
+    font-size: 80px;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .qa-question-box {
+    margin-bottom: 4px;
+  }
+  .qa-question-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--sumi);
+    line-height: 1.6;
+  }
+  .qa-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+    text-align: left;
+  }
+  .qa-choice-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: #fff;
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    font-family: inherit;
+    text-align: left;
+  }
+  .qa-choice-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+  }
+  .qa-choice-num {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--hanko);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .qa-choice-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .qa-choice-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--sumi);
+  }
+  .qa-choice-kr {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 12.5px;
+    color: #8a8272;
+    display: none;
+  }
+  .qa-choices.revealed .qa-choice-kr {
+    display: block;
+  }
+  .qa-choice-btn.correct {
+    background: var(--correct) !important;
+    border-color: var(--correct) !important;
+  }
+  .qa-choice-btn.correct .qa-choice-jp,
+  .qa-choice-btn.correct .qa-choice-kr,
+  .qa-choice-btn.wrong .qa-choice-jp,
+  .qa-choice-btn.wrong .qa-choice-kr {
+    color: #fff !important;
+  }
+  .qa-choice-btn.correct-hint {
+    border-color: var(--correct) !important;
+    border-width: 3px !important;
+  }
+  .qa-choice-btn.wrong {
+    background: var(--wrong) !important;
+    border-color: var(--wrong) !important;
+    animation: shake 0.3s ease-in-out;
+  }
+  .qa-feedback {
+    min-height: 22px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--hanko);
+    margin-top: 12px;
+  }
+
+  @keyframes quizAppear {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* 🌈 '생활 문답' 게임 스타일 (시간·온도·날씨 등 생활 속 질문에 답하는 게임) */
+  .lifeqa-topic-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+  .lifeqa-topic-btn {
+    background: #fff;
+    border: 1.5px solid var(--sumi);
+    border-radius: 18px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .lifeqa-topic-btn.active {
+    background: var(--hanko);
+    border-color: var(--hanko);
+    color: #fff;
+  }
+  .lifeqa-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+    text-align: left;
+  }
+  .lifeqa-question-col {
+    flex: 1;
+    min-width: 0;
+  }
+  .lifeqa-image-col {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 130px;
+    height: 150px;
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .lifeqa-svg {
+    max-width: 130px;
+    max-height: 150px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+  }
+
+  /* 🏪 가게 게임: 이모지 + 가격 카드 그리드 */
+  .shop-items-display {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .shop-item-card {
+    background: #fff;
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 16px 6px 12px;
+    text-align: center;
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .shop-item-emoji {
+    font-size: 38px;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .shop-item-price {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--hanko);
+  }
+  @media (max-width: 480px) {
+    .shop-item-emoji { font-size: 26px; }
+    .shop-item-price { font-size: 12px; }
+    .shop-items-display { gap: 6px; }
+    .shop-item-card { padding: 10px 4px 8px; }
+  }
+
+  /* TTS Sound Button */
+  .quiz-audio-btn, .writing-audio-btn {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 20px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    margin-bottom: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    outline: none;
+  }
+  .quiz-audio-btn:hover, .writing-audio-btn:hover {
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .quiz-audio-btn:active, .writing-audio-btn:active {
+    transform: translateY(0);
+  }
+  .quiz-audio-btn:disabled, .writing-audio-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .quiz-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+  .quiz-btn {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 18px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 74px;
+  }
+  .quiz-btn:hover {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  
+  /* 정답 및 오답 시 스타일 */
+  .quiz-btn.correct {
+    background: var(--correct) !important;
+    color: #fff !important;
+    border-color: var(--correct) !important;
+  }
+  .quiz-btn.correct-hint {
+    border-color: var(--correct) !important;
+    border-width: 3px !important;
+  }
+  .quiz-btn.wrong {
+    background: var(--wrong) !important;
+    color: #fff !important;
+    border-color: var(--wrong) !important;
+    animation: shake 0.3s ease-in-out;
+  }
+  
+  .quiz-btn .btn-kr {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 4px;
+    opacity: 0.9;
+  }
+  
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  /* ⚡ 히라가나 스피드게임 전용 스타일 */
+  .hs-container {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 30px 24px;
+    text-align: center;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .hs-start-desc {
+    font-size: 14.5px;
+    color: #4a453c;
+    line-height: 1.7;
+    max-width: 42ch;
+    margin: 10px auto 22px;
+  }
+  .hs-timerbar-track {
+    width: 100%;
+    height: 10px;
+    background: rgba(33,29,25,0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 22px;
+  }
+  .hs-timerbar-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--hanko);
+    border-radius: 6px;
+  }
+  .hs-prompt-box {
+    margin-bottom: 22px;
+  }
+  .hs-prompt-label {
+    font-size: 13px;
+    color: #7a7364;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .hs-prompt-romaji {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 46px;
+    color: var(--indigo);
+    letter-spacing: 0.03em;
+    margin-bottom: 14px;
+    animation: quizAppear .35s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .hs-cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .hs-cards.hs-cards-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .hs-cards.hs-cards-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hs-card {
+    font-size: 48px;
+    min-height: 110px;
+  }
+  .hs-cards-3 .hs-card {
+    font-size: 40px;
+    min-height: 96px;
+  }
+
+  /* ⚡ 히라가나 스피드게임 - 게임 시작 전에 보여주는 46자 오답률 통계 그리드
+     맨 왼쪽에 행 헤더(a/ka/sa/ta/na/ha/ma/ya/ra/wa/n) 열을 하나 더 두고,
+     나머지 5개 열은 오십음도 모음 열(a/i/u/e/o)로, 실제 오십음도 표처럼 배치합니다 */
+  .hs-stat-grid {
+    display: grid;
+    grid-template-columns: 30px repeat(5, 1fr);
+    gap: 5px;
+    margin: 20px 0 6px;
+  }
+  .hs-stat-colhead,
+  .hs-stat-rowhead {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    color: #7a7364;
+  }
+  .hs-stat-rowhead {
+    justify-content: flex-end;
+    padding-right: 3px;
+  }
+  .hs-stat-cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    border: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--sumi);
+    cursor: pointer;
+  }
+  .hs-stat-cell .hs-stat-ch {
+    display: inline-block;
+  }
+  .hs-stat-cell .hs-stat-ch.hs-stat-ch-pulse {
+    animation: hsStatChPulse 0.7s ease;
+  }
+  @keyframes hsStatChPulse {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.6); }
+    100% { transform: scale(1); }
+  }
+  .hs-stat-cell .hs-stat-correct,
+  .hs-stat-cell .hs-stat-wrong {
+    position: absolute;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 700;
+    font-size: 8.5px;
+    line-height: 1;
+    top: 2px;
+  }
+  .hs-stat-cell .hs-stat-correct {
+    left: 2px;
+    color: var(--correct);
+  }
+  .hs-stat-cell .hs-stat-wrong {
+    right: 2px;
+    color: var(--wrong);
+  }
+  .hs-stat-cell.hs-stat-neutral { background: #fff; }
+  .hs-stat-cell.hs-stat-green   { background: #dcf3dd; border-color: #9ccf9f; }
+  .hs-stat-cell.hs-stat-yellow  { background: #fbecc2; border-color: #e0c368; }
+  .hs-stat-cell.hs-stat-red     { background: #f8d6d2; border-color: #e59a8f; }
+  .hs-stat-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    font-size: 11.5px;
+    color: #7a7364;
+    margin-bottom: 18px;
+  }
+  .hs-stat-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .hs-stat-legend i {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .hs-result-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 24px;
+    color: var(--sumi);
+    margin-bottom: 18px;
+  }
+  .hs-result-row {
+    font-size: 15.5px;
+    color: #4a453c;
+    margin-bottom: 10px;
+  }
+  .hs-result-row b {
+    color: var(--hanko);
+    font-size: 18px;
+  }
+  .hs-result-score {
+    margin: 14px 0 20px;
+    font-size: 17px;
+  }
+  .hs-result-score b {
+    font-size: 26px;
+  }
+
+  /* 🌱🐘 형용사 배우기 MODE STYLES — ちびむすドリル 반의어 형용사 워크시트를
+     인터랙티브 게임으로 옮긴 화면. 셸프(목록)에서 5개 형용사 짝을 고르고,
+     각 짝마다 소개 화면 → 굵기/길이/높이/양/크기 비교 퀴즈 → (일부는) 분류 퀴즈 → 결과 순으로 진행 */
+  .adj-shelf {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .adj-shelf-card {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 18px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .adj-shelf-card:hover {
+    background: #fff;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+  .adj-shelf-emoji { font-size: 38px; margin-bottom: 8px; line-height: 1; }
+  .adj-shelf-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 15.5px;
+    color: var(--indigo);
+  }
+  .adj-shelf-sub { font-size: 11.5px; color: #8a8272; margin-top: 4px; }
+
+  .adj-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .adj-header-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 19px;
+    color: var(--hanko);
+    flex: 1;
+    text-align: center;
+  }
+  .adj-intro-box {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 20px;
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .adj-intro-emoji { font-size: 54px; margin-bottom: 10px; line-height: 1; }
+  .adj-intro-word { font-family:'Shippori Mincho', serif; font-weight:800; font-size:17px; color:var(--sumi); margin-bottom: 4px; }
+  .adj-intro-desc { font-size: 13px; color:#7a7364; margin-bottom: 14px; }
+  .adj-intro-shapes { display:flex; align-items:flex-end; justify-content:center; gap: 34px; min-height: 130px; margin-bottom: 14px; }
+  .adj-intro-shape-col { display:flex; flex-direction:column; align-items:center; gap: 8px; }
+  .adj-intro-shape-label { font-family:'Shippori Mincho', serif; font-weight:700; font-size:14px; color:var(--indigo); }
+
+  .adj-progress { font-size: 13px; color:#7a7364; font-weight:700; text-align:center; margin-bottom: 10px; }
+  .adj-quiz-box {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 18px 20px;
+    text-align: center;
+  }
+  .adj-item-label { font-size: 14px; color:#4a453c; margin-bottom: 4px; }
+  .adj-item-jp { font-family:'Shippori Mincho', serif; font-weight:800; font-size: 20px; color: var(--sumi); margin-bottom: 14px; }
+  .adj-prompt { font-size: 14.5px; color: var(--indigo); font-weight: 700; margin-bottom: 18px; }
+  .adj-shapes-row { display:flex; align-items:flex-end; justify-content:center; gap: 30px; min-height: 150px; }
+  .adj-shape-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .adj-shape-wrap {
+    display:flex; align-items:flex-end; justify-content:center;
+    border-radius: 14px;
+    border: 2.5px solid transparent;
+    padding: 10px;
+    transition: all 0.15s;
+    min-width: 90px;
+    min-height: 118px;
+  }
+  .adj-shape-btn:not(:disabled):hover .adj-shape-wrap { background: rgba(43,58,85,0.06); }
+  .adj-shape-wrap.adj-shape-correct { border-color: var(--correct); background: #dcf3dd; }
+  .adj-shape-wrap.adj-shape-wrong { border-color: var(--wrong); background: #f8d6d2; }
+  .adj-shape-tap-label { font-size: 12.5px; color:#7a7364; }
+  .adj-quantity-cup {
+    width: 76px; height: 96px;
+    border: 3px solid #8a8272;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    display:flex; flex-wrap:wrap; align-content:flex-end; justify-content:center;
+    gap: 4px; padding: 6px;
+  }
+  .adj-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--gold); }
+
+  .adj-feedback { font-size: 15px; font-weight: 700; margin: 16px 0 6px; min-height: 22px; }
+  .adj-feedback.adj-fb-correct { color: var(--correct); }
+  .adj-feedback.adj-fb-wrong { color: var(--wrong); }
+  .adj-reveal-sentence { font-family:'Shippori Mincho', serif; font-size: 16px; color: var(--indigo); font-weight:700; margin-bottom: 14px; min-height: 20px; }
+
+  .adj-classify-word-box {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin: 6px 0 18px;
+  }
+  .adj-classify-jp { font-family:'Shippori Mincho', serif; font-weight:800; font-size: 26px; color: var(--sumi); margin-bottom: 4px; }
+  .adj-classify-kr { font-size: 13.5px; color:#7a7364; }
+  .adj-classify-btn-row { display:flex; justify-content:center; gap: 14px; flex-wrap: wrap; }
+  .adj-classify-btn {
+    font-family:'Noto Sans KR', sans-serif;
+    font-weight: 700;
+    font-size: 14.5px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    border: 1.5px solid var(--sumi);
+    background: var(--washi);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .adj-classify-btn:hover:not(:disabled) { background:#fff; transform: translateY(-2px); }
+  .adj-classify-btn:disabled { cursor: default; }
+  .adj-classify-btn.adj-classify-correct { background:#dcf3dd; border-color: var(--correct); }
+  .adj-classify-btn.adj-classify-wrong { background:#f8d6d2; border-color: var(--wrong); }
+
+  /* ⚡ 히라가나 스피드게임 - 오답 가중치 선택 UI */
+  .hs-weight-row {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 6px 0 6px;
+  }
+  /* 🧠 SRS(간격 반복) 모드를 선택했을 때만 보여주는 짧은 설명 문구 */
+  .hs-srs-note {
+    display: none;
+    max-width: 420px;
+    margin: 0 auto 20px;
+    padding: 8px 12px;
+    background: #eef2fb;
+    border: 1px solid #c7d3f0;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #46557a;
+    text-align: center;
+  }
+  .hs-srs-note.active { display: block; }
+
+  /* ⚡ 히라가나 스피드게임 - 통계 기록 초기화 버튼 */
+  .hs-reset-stats-btn {
+    display: block;
+    margin: -14px auto 20px;
+    background: none;
+    border: none;
+    color: #b0685f;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 4px 8px;
+  }
+  .hs-reset-stats-btn:hover {
+    color: #8a4c44;
+  }
+
+  /* 🧠 단어 메모리 게임 전용 스타일 */
+  .wm-size-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .wm-sequence-label, .wm-cards-label {
+    font-size: 13px;
+    color: #7a7364;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .wm-sequence-dots {
+    font-size: 13.5px;
+    color: var(--indigo);
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .wm-cards {
+    display: grid;
+    gap: 14px;
+    margin-top: 6px;
+  }
+  .wm-card {
+    font-size: 24px;
+    min-height: 84px;
+    position: relative;
+  }
+  .wm-order-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--hanko);
+    color: #fff;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 12.5px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+  }
+
+  /* 🧩 그림 반쪽 맞추기 게임 전용 스타일 — 그림(이모지)과 글자를 세로 절반으로 나눠 보여주다가
+     정답을 고르면 나머지 절반이 나타나 하나의 그림/단어로 완성됩니다 */
+  .ew-picture-box {
+    display: flex;
+    width: 220px;
+    height: 200px;
+    margin: 0 auto 14px;
+    border: 3px solid var(--sumi);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .ew-picture-half {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  .ew-picture-half.ew-left {
+    border-right: 2px dashed var(--line);
+  }
+  .ew-picture-emoji-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 220px;
+    height: 200px;
+    font-size: 150px;
+    line-height: 200px;
+    text-align: center;
+  }
+  .ew-picture-half.ew-right .ew-picture-emoji-inner {
+    left: -110px;
+  }
+  .ew-picture-emoji-inner.ew-reveal-anim {
+    animation: quizAppear .45s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .ew-picture-card-back {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 48px;
+    color: #b7ad98;
+    background: repeating-linear-gradient(135deg, #f3efe4, #f3efe4 10px, #ece5d4 10px, #ece5d4 20px);
+  }
+  .ew-word-box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    margin: 0 auto 20px;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 40px;
+    color: var(--sumi);
+  }
+  .ew-word-half {
+    min-width: 1.3em;
+    display: inline-block;
+    text-align: center;
+  }
+  .ew-word-half.ew-word-right {
+    color: #b7ad98;
+  }
+  .ew-word-box.ew-word-complete {
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .ew-word-box.ew-word-complete .ew-word-half.ew-word-right {
+    color: var(--hanko);
+  }
+  .ew-options-label {
+    font-size: 13px;
+    color: #7a7364;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  /* 🌑 실루엣 맞추기 게임 전용 스타일 — 이모지를 CSS filter로 새까만 실루엣처럼 보여주다가
+     정답을 맞히면 필터를 걷어내 원래 색깔 그림으로 채워지는 효과를 냅니다 */
+  .sil-picture-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 220px;
+    height: 200px;
+    margin: 0 auto 14px;
+    border: 3px solid var(--sumi);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .sil-emoji {
+    font-size: 130px;
+    line-height: 1;
+    filter: brightness(0) saturate(100%);
+    transition: filter 0.5s ease;
+  }
+  .sil-emoji.sil-revealed {
+    filter: none;
+  }
+  .sil-emoji.sil-reveal-anim {
+    animation: quizAppear .45s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .sil-word-reveal {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 32px;
+    color: var(--hanko);
+    text-align: center;
+    min-height: 40px;
+    margin: 10px auto 14px;
+    visibility: hidden;
+  }
+  .sil-word-reveal.sil-word-visible {
+    visibility: visible;
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+
+  /* 🎞️ 실루엣 문제 등장 연출 4종 — 문제가 나올 때마다 이 중 하나를 무작위로 사용합니다.
+     (1) 확대→축소, (2) 모자이크→선명, (3) 직소 퍼즐 조각 맞춰지기, (4) 좌우로 흔들리다 정지 */
+  .sil-picture-box { position: relative; }
+
+  .sil-emoji.sil-fx-zoom {
+    transform: scale(2.3);
+    transform-origin: 34% 40%;
+  }
+  .sil-emoji.sil-fx-zoom.sil-fx-settle {
+    transition: transform 1.1s cubic-bezier(.22, .68, .36, 1);
+    transform: scale(1);
+    transform-origin: 50% 50%;
+  }
+  .sil-emoji.sil-fx-slide {
+    animation: silSlideSettle 1.3s cubic-bezier(.22, .61, .36, 1) both;
+  }
+  @keyframes silSlideSettle {
+    0%   { transform: translateX(-70px); }
+    14%  { transform: translateX(60px); }
+    30%  { transform: translateX(-42px); }
+    46%  { transform: translateX(26px); }
+    62%  { transform: translateX(-14px); }
+    78%  { transform: translateX(7px); }
+    90%  { transform: translateX(-3px); }
+    100% { transform: translateX(0); }
+  }
+
+  .sil-mosaic-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 220px;
+    height: 200px;
+    filter: brightness(0) saturate(100%);
+  }
+
+  .sil-jigsaw {
+    position: absolute;
+    inset: 0;
+  }
+  .sil-jigsaw-piece {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .sil-jigsaw-piece[data-piece="0"] { clip-path: inset(0 50% 50% 0); }
+  .sil-jigsaw-piece[data-piece="1"] { clip-path: inset(0 0 50% 50%); }
+  .sil-jigsaw-piece[data-piece="2"] { clip-path: inset(50% 50% 0 0); }
+  .sil-jigsaw-piece[data-piece="3"] { clip-path: inset(50% 0 0 50%); }
+  .sil-jigsaw-piece .sil-emoji-copy {
+    font-size: 130px;
+    line-height: 1;
+    filter: brightness(0) saturate(100%);
+  }
+
+  .sil-options-label {
+    font-size: 13px;
+    color: #7a7364;
+    font-weight: 700;
+    margin: 14px 0 10px;
+  }
+
+  /* 😊 저연령 레벨(gentle-mode)일 때 오답 표시를 부드럽게 완화 */
+  body.gentle-mode .emoji-btn.wrong,
+  body.gentle-mode .quiz-btn.wrong,
+  body.gentle-mode .sentence-btn.wrong,
+  body.gentle-mode .write-input.wrong {
+    background: var(--wrong-gentle) !important;
+    border-color: var(--wrong-gentle) !important;
+    animation: none !important;
+  }
+
+  /* 🍼 아기말투(motherese) TTS 토글 */
+  .babytalk-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 22px;
+    font-size: 13px;
+  }
+  .babytalk-box label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    width: 100%;
+  }
+  .babytalk-switch {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .babytalk-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .babytalk-slider {
+    position: absolute;
+    inset: 0;
+    background: #d8d0bd;
+    border-radius: 24px;
+    transition: all .2s;
+  }
+  .babytalk-slider::before {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: all .2s;
+  }
+  .babytalk-switch input:checked + .babytalk-slider {
+    background: var(--hanko);
+  }
+  .babytalk-switch input:checked + .babytalk-slider::before {
+    transform: translateX(18px);
+  }
+  .babytalk-text b { color: var(--hanko); }
+
+  /* 🇰🇷 한글 함께 보기 설정이 꺼졌을 때, 모든 게임에서 한글 뜻/번역을 보여주는 요소를 한꺼번에 숨깁니다.
+     각 게임이 이미 자체 토글이나 '정답 공개' 클래스(.revealed, .found 등)로 display를 block으로 바꿔놓아도
+     !important로 덮어써서 항상 숨겨지도록 합니다. 이 설정이 켜져 있을 때는 이 규칙 자체가 적용되지 않으므로
+     각 게임 고유의 표시/숨김 로직(예: 이모지 동화책의 자체 한글 토글)이 그대로 동작합니다. */
+  body.hide-korean-display .kr,
+  body.hide-korean-display .writing-kr-hint,
+  body.hide-korean-display .spelling-kr-hint,
+  body.hide-korean-display .expansion-kr,
+  body.hide-korean-display .scene-line-kr,
+  body.hide-korean-display .adj-classify-kr,
+  body.hide-korean-display .btn-kr,
+  body.hide-korean-display .ws-emoji-kr,
+  body.hide-korean-display .qa-choice-kr,
+  body.hide-korean-display .worksheet-word-kr,
+  body.hide-korean-display .dt-word-kr,
+  body.hide-korean-display .storybook-page-kr,
+  body.hide-korean-display .trace-kr-hint {
+    display: none !important;
+  }
+
+  /* 🔁 반복 노출(번역 없이) 모드 */
+  .exposure-progress-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px 0 4px;
+  }
+  .exposure-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--line);
+    border: 1px solid #b7ab97;
+    transition: all .2s;
+  }
+  .exposure-dot.filled {
+    background: var(--gold);
+    border-color: var(--gold);
+  }
+
+  /* 🎶 わらべうた 손동작 노래 모드 */
+  .song-list { display: flex; flex-direction: column; gap: 10px; }
+  .song-card {
+    background: var(--washi);
+    border: 1px solid var(--sumi);
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all .2s;
+    text-align: left;
+  }
+  .song-card:hover {
+    background: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .song-card-title { font-weight: 700; font-size: 15px; color: var(--indigo); }
+  .song-card-sub { font-size: 12.5px; color: #7a7364; margin-top: 4px; }
+  .song-detail-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--hanko);
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .song-lyrics {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 4px 16px;
+  }
+  .song-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 8px;
+    border-bottom: 1px dashed var(--line);
+    cursor: pointer;
+  }
+  .song-line:last-child { border-bottom: none; }
+  .song-line-jp {
+    font-size: 19px;
+    font-weight: 700;
+    transition: color .2s;
+  }
+  .song-line.active-line .song-line-jp { color: var(--hanko); }
+  .song-line-gesture { font-size: 12px; color: #7a7364; }
+
+  /* 🎤🎶 동요 가라오케 모드 */
+  .karaoke-desc {
+    font-size: 13px;
+    color: #7a7364;
+    margin-bottom: 18px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .karaoke-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .karaoke-card {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 18px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .karaoke-card:hover {
+    background: #fff;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+  .karaoke-card-emoji { font-size: 38px; margin-bottom: 8px; line-height: 1; }
+  .karaoke-card-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--indigo);
+  }
+  .karaoke-card-sub { font-size: 11px; color: #8a8272; margin-top: 4px; line-height: 1.4; }
+
+  .karaoke-player-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .karaoke-player-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 19px;
+    color: var(--hanko);
+    flex: 1;
+    text-align: center;
+  }
+  .karaoke-stage {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 18px;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  .karaoke-stage-emoji {
+    font-size: 72px;
+    margin-bottom: 16px;
+    line-height: 1;
+    min-height: 82px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .karaoke-stage-emoji.pop {
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .karaoke-lyrics-box {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 4px 14px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .karaoke-line {
+    padding: 12px 6px;
+    border-bottom: 1px dashed var(--line);
+    font-family: 'Shippori Mincho', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #b7ad98;
+    text-align: center;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: color .2s;
+  }
+  .karaoke-line:last-child { border-bottom: none; }
+  .karaoke-line.done-line { color: var(--gold); }
+  .karaoke-line.active-line { color: var(--sumi); }
+  .karaoke-autoplay-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: #6b6355;
+    margin-bottom: 14px;
+  }
+  .karaoke-autoplay-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* 🗣️ 2단어 문장 맞히기 모드 전용 스타일 */
+  .sentence-progress {
+    font-family:'Shippori Mincho', serif;
+    font-size: 22px;
+    color: var(--indigo);
+    min-height: 34px;
+    margin: 4px 0 18px;
+    letter-spacing: 0.02em;
+  }
+  .sentence-progress .blank {
+    color: #b7ab97;
+  }
+  .sentence-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .sentence-btn {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 14px 6px;
+    font-size: 34px;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 84px;
+    position: relative;
+  }
+  .sentence-btn:hover {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .sentence-btn.picked {
+    border-color: var(--gold) !important;
+    border-width: 3px !important;
+    background: #fff;
+  }
+  .sentence-btn.correct {
+    background: var(--correct) !important;
+    border-color: var(--correct) !important;
+  }
+  .sentence-btn.wrong {
+    background: var(--wrong) !important;
+    border-color: var(--wrong) !important;
+    animation: shake 0.3s ease-in-out;
+  }
+  .sentence-btn.correct-hint {
+    border-color: var(--correct) !important;
+    border-width: 3px !important;
+  }
+  .sentence-btn.correct-hint .btn-text-sub {
+    opacity: 1;
+  }
+  .sentence-btn .order-badge {
+    position: absolute;
+    top: -10px; left: -10px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--hanko);
+    color: var(--washi);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 900;
+    border: 2px solid var(--washi);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  .sentence-btn .btn-text-sub {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--sumi);
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .sentence-btn.correct .btn-text-sub,
+  .sentence-btn.wrong .btn-text-sub {
+    opacity: 1;
+    color: #fff !important;
+  }
+
+  /* 🗣️ 확장 발화(expansion) 안내 박스 — 부모가 아이 말을 문장으로 확장해주는 방식 */
+  .expansion-box {
+    display: none;
+    margin: 14px auto 4px;
+    max-width: 92%;
+    background: #fff;
+    border: 1.5px dashed var(--gold);
+    border-radius: 12px;
+    padding: 12px 16px;
+    text-align: center;
+  }
+  .expansion-box.show { display: block; animation: appear .3s ease forwards; }
+  .expansion-box .expansion-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+  .expansion-box .expansion-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 19px;
+    color: var(--sumi);
+  }
+  .expansion-box .expansion-kr {
+    font-size: 12.5px;
+    color: #7a7364;
+    margin-top: 3px;
+  }
+
+  /* 🌅 하루 일과 씬(scene) 모드 */
+  .scene-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+  .scene-btn {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .scene-btn.active {
+    background: var(--indigo);
+    color: var(--washi);
+    border-color: var(--indigo);
+  }
+  .scene-line-box {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 30px 22px;
+    margin-bottom: 16px;
+    min-height: 150px;
+  }
+  .scene-line-emoji {
+    font-size: 60px;
+    margin-bottom: 10px;
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .scene-line-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--sumi);
+    letter-spacing: 0.03em;
+  }
+  .scene-line-romaji {
+    font-size: 13px;
+    color: #9c9484;
+    margin-top: 6px;
+  }
+  .scene-line-kr {
+    font-size: 15px;
+    color: var(--indigo);
+    font-weight: 700;
+    margin-top: 10px;
+  }
+  .scene-nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .scene-nav-btn {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .scene-nav-btn:hover { background: #fff; }
+  .scene-nav-btn:disabled { opacity: 0.35; cursor:not-allowed; }
+
+  /* 🈴 한자 플래시카드 (초등 1학년 한자) */
+  .kc-grid-desc { font-size: 13px; color:#7a7364; text-align:center; margin-bottom:16px; line-height:1.6; }
+  .kc-grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap:12px;
+  }
+  .kc-tile {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 14px 6px 10px;
+    text-align:center;
+    cursor:pointer;
+    transition: all 0.2s ease;
+  }
+  .kc-tile:hover { background:#fff; transform: translateY(-2px); box-shadow: 0 5px 12px rgba(0,0,0,0.09); }
+  .kc-tile-char {
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:34px;
+    color: var(--sumi);
+    line-height:1;
+  }
+  .kc-tile-reading { font-size:10.5px; color:#8a8272; margin-top:6px; }
+  .kc-card-screen { text-align:center; }
+  .kc-progress { font-size:13px; font-weight:700; color:#8a8272; margin-bottom:12px; }
+  .kc-card {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 20px;
+    max-width: 340px;
+    margin: 0 auto 14px;
+    padding: 30px 20px;
+    cursor:pointer;
+    min-height: 260px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    position:relative;
+  }
+  .kc-card::before{
+    content:"";
+    position:absolute; inset:8px;
+    border:1px dashed var(--line);
+    border-radius:14px;
+    pointer-events:none;
+  }
+  .kc-card-face { flex-direction:column; align-items:center; justify-content:center; width:100%; }
+  .kc-char {
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:120px;
+    color: var(--sumi);
+    line-height:1;
+  }
+  .kc-emoji { font-size:52px; margin-top:14px; }
+  .kc-reading {
+    font-family:'Shippori Mincho', serif;
+    font-weight:700;
+    font-size:30px;
+    color: var(--hanko);
+    margin-bottom:20px;
+  }
+  .kc-words { display:flex; flex-direction:column; gap:10px; width:100%; }
+  .kc-word {
+    font-size:19px;
+    font-weight:700;
+    color: var(--indigo);
+    background: rgba(255,255,255,0.6);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 10px;
+  }
+  .kc-hint { font-size:12px; color:#8a8272; margin-bottom:14px; }
+  .scene-progress-dots {
+    display: flex;
+    justify-content: center;
+    gap: 7px;
+    margin-bottom: 18px;
+  }
+  .scene-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--line);
+    transition: all 0.2s;
+  }
+  .scene-dot.done { background: var(--sage); }
+  .scene-dot.current { background: var(--hanko); transform: scale(1.25); }
+  .scene-autoplay-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: #6b6355;
+    margin-bottom: 6px;
+  }
+  .scene-desc {
+    font-size: 13px;
+    color: #7a7364;
+    margin-bottom: 16px;
+  }
+
+  /* 🎤 발음 재생 중 히라가나를 순서대로 다른 색으로 보여주는 카라오케 스타일 하이라이트 */
+  .tts-char {
+    display: inline-block;
+    transition: color 0.15s ease, transform 0.15s ease;
+    color: inherit;
+  }
+  .tts-char-active {
+    color: var(--hanko) !important;
+    transform: translateY(-2px) scale(1.12);
+  }
+  .tts-char-done {
+    color: var(--gold) !important;
+  }
+
+  /* 📖 엄마 목소리 동화책 모드 */
+  .storybook-desc {
+    font-size: 13px;
+    color: #7a7364;
+    margin-bottom: 18px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .storybook-shelf {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .storybook-cover-card {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 14px;
+    padding: 18px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .storybook-cover-card:hover {
+    background: #fff;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+  .storybook-cover-emoji { font-size: 40px; margin-bottom: 8px; line-height: 1; }
+  .storybook-cover-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 14.5px;
+    color: var(--indigo);
+  }
+  .storybook-cover-sub { font-size: 11.5px; color: #8a8272; margin-top: 4px; line-height: 1.4; }
+
+  .storybook-reader-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .storybook-reader-title {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 19px;
+    color: var(--hanko);
+    flex: 1;
+    text-align: center;
+  }
+  .storybook-page-box {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 34px 22px;
+    margin-bottom: 16px;
+    min-height: 170px;
+    text-align: center;
+  }
+  .storybook-page-emoji {
+    font-size: 68px;
+    margin-bottom: 14px;
+    line-height: 1;
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .storybook-page-jp {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--sumi);
+    letter-spacing: 0.04em;
+    min-height: 44px;
+  }
+  .storybook-page-romaji { font-size: 13px; color: #9c9484; margin-top: 8px; }
+  .storybook-page-kr { font-size: 16px; color: var(--indigo); font-weight: 700; margin-top: 12px; }
+  .storybook-autoplay-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: #6b6355;
+    margin-bottom: 6px;
+  }
+  .storybook-end-msg {
+    margin-top: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--sage);
+    text-align: center;
+  }
+  .ebook-page-box {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .ebook-page-image {
+    max-width: 100%;
+    max-height: 62vh;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  }
+  .ebook-page-caption {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--sumi);
+    margin-top: 16px;
+    white-space: pre-line;
+    line-height: 1.6;
+  }
+  .ebook-license {
+    margin-top: 18px;
+    font-size: 11.5px;
+    color: #9c9484;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .ebook-license a { color: var(--hanko); }
+
+  .ebook-pdf-frame {
+    width: 100%;
+    height: 62vh;
+    min-height: 340px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+  }
+  .ebook-pdf-caption {
+    font-size: 11.5px;
+    color: #9c9484;
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+  .ebook-pdf-direct-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--hanko);
+    text-decoration: underline;
+  }
+
+  .ebook-level-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .ebook-level-btn {
+    background: var(--washi);
+    border: 1.5px solid var(--sumi);
+    border-radius: 16px;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 6px 14px;
+    cursor: pointer;
+    color: var(--sumi);
+    transition: all 0.2s ease;
+  }
+  .ebook-level-btn:hover { background: #fff; }
+  .ebook-level-btn.active {
+    background: var(--hanko);
+    color: var(--washi);
+    border-color: var(--hanko);
+  }
+
+  /* GLOBAL AGE-LEVEL SELECTOR (연령대별 단어 범위) */
+  .age-level-box {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 18px 16px;
+    margin-bottom: 22px;
+  }
+  .age-level-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--indigo);
+    margin-bottom: 10px;
+  }
+  .age-level-box .level-select {
+    margin-bottom: 8px;
+  }
+  .age-level-box .lvl-btn {
+    flex: 1 1 auto;
+  }
+  .age-level-count {
+    font-size: 12px;
+    color: #7a7364;
+    text-align: center;
+  }
+  .age-level-count b {
+    color: var(--hanko);
+  }
+
+  /* WRITING GAME MODE CONTENT */
+  .level-select, .type-select {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .lvl-btn, .type-btn {
+    background: var(--washi);
+    border: 1px solid var(--sumi);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .lvl-btn.active, .type-btn.active {
+    background: var(--hanko);
+    color: var(--washi);
+    border-color: var(--hanko);
+  }
+  .type-select {
+    margin-bottom: 20px;
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 12px;
+  }
+  .writing-target-box {
+    min-height: 60px;
+    margin-bottom: 16px;
+  }
+  .writing-jp-hint {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 42px;
+    font-weight: 800;
+    color: var(--sumi);
+    letter-spacing: 0.05em;
+  }
+  .writing-kr-hint {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--indigo);
+    margin-top: 6px;
+  }
+
+  /* 입력창과 버튼 레이아웃: 중앙 정렬 */
+  .writing-input-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    margin: 0 auto 16px;
+  }
+  
+  /* 6글자 크기로 최적화된 컴팩트 입력창 */
+  .write-input {
+    width: 180px; /* 크기를 180px로 가로 폭 축소 */
+    font-family: 'Shippori Mincho', serif;
+    font-size: 24px;
+    font-weight: 700;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 2px solid var(--sumi);
+    background: var(--washi);
+    color: var(--sumi);
+    text-align: center;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .write-input:focus {
+    background: #fff;
+    border-color: var(--gold);
+  }
+  .write-input.correct {
+    background: var(--correct);
+    color: #fff;
+    border-color: var(--correct);
+  }
+  .write-input.wrong {
+    background: var(--wrong);
+    color: #fff;
+    border-color: var(--wrong);
+    animation: shake 0.3s ease-in-out;
+  }
+
+  /* 제출 버튼 스타일 최적화 */
+  .write-submit-btn {
+    height: 52px; /* 입력창 높이와 동일하게 맞춤 */
+    background: var(--sumi);
+    color: var(--washi);
+    border: none;
+    border-radius: 12px;
+    padding: 0 16px;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  .write-submit-btn:hover {
+    opacity: 0.9;
+  }
+
+  .writing-result-feedback {
+    min-height: 24px;
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 10px;
+    margin-bottom: 14px;
+  }
+
+  /* 🅰️ Hiragana Virtual Keyboard */
+  .kana-keyboard-box {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 14px;
+    padding: 12px;
+    max-width: 500px;
+    margin: 0 auto;
+    display: none;
+  }
+  .kana-keyboard-box.show {
+    display: block;
+  }
+  .kbd-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .kbd-key {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 0;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--sumi);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s, transform 0.05s;
+  }
+  .kbd-key:active {
+    background: var(--washi-deep);
+    transform: scale(0.95);
+  }
+  .kbd-key.func {
+    background: var(--washi-deep);
+    font-size: 13px;
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+  .kbd-key.empty {
+    visibility: hidden;
+  }
+
+  /* 🅱️ Handwriting Canvas Area */
+  .handwriting-box {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 14px;
+    padding: 14px;
+    max-width: 440px;
+    margin: 0 auto;
+    display: none;
+  }
+  .handwriting-box.show {
+    display: block;
+  }
+  .canvas-container {
+    position: relative;
+    width: 280px;
+    height: 200px;
+    margin: 0 auto 12px;
+    border: 2px dashed rgba(33, 29, 25, 0.3);
+    border-radius: 8px;
+    background: #ffffff;
+  }
+  #paintCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .canvas-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .canvas-btn {
+    background: var(--washi-deep);
+    border: 1px solid var(--sumi);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .canvas-btn:active {
+    background: #fff;
+  }
+  .candidates-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-height: 42px;
+    align-items: center;
+  }
+  .candidate-btn {
+    background: #fff;
+    border: 1.5px solid var(--sumi);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 20px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .candidate-btn:hover {
+    background: var(--washi-deep);
+  }
+
+  /* ✍️ TRACE (따라쓰기 트레이싱) MODE STYLES */
+  .trace-container {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 30px 24px;
+    text-align: center;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .trace-emoji {
+    font-size: 76px;
+    line-height: 1.2;
+    margin-bottom: 6px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+    animation: quizAppear .4s cubic-bezier(.175, .885, .32, 1.275);
+  }
+  .trace-emoji.trace-emoji-kana {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    color: var(--sumi);
+    filter: none;
+  }
+  .trace-study-toggle {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .trace-speaking-hint {
+    font-size: 12.5px;
+    color: var(--hanko);
+    font-weight: 700;
+    min-height: 18px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .trace-speaking-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--hanko);
+    animation: wavePulse 1s infinite ease-in-out;
+  }
+  .trace-kr-hint {
+    font-size: 15px;
+    color: var(--indigo);
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  .trace-canvas-wrap {
+    position: relative;
+    width: 320px;
+    max-width: 100%;
+    height: 170px;
+    margin: 0 auto 14px;
+    border: 2px dashed rgba(33, 29, 25, 0.3);
+    border-radius: 12px;
+    background: #ffffff;
+  }
+  .trace-canvas-wrap canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+  }
+  #traceGuideCanvas {
+    pointer-events: none;
+  }
+  #traceDrawCanvas {
+    cursor: crosshair;
+  }
+  #hwGuideCanvas {
+    pointer-events: none;
+  }
+  #hwDrawCanvas {
+    cursor: crosshair;
+  }
+  .trace-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 320px;
+    margin: 0 auto 16px;
+  }
+  .trace-progress-track {
+    flex: 1;
+    height: 12px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1.5px solid var(--sumi);
+    overflow: hidden;
+  }
+  .trace-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--sage);
+    transition: width 0.15s ease, background 0.2s ease;
+  }
+  .trace-progress-fill.trace-ready {
+    background: var(--correct);
+  }
+  .trace-progress-label {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--indigo);
+    min-width: 46px;
+    text-align: right;
+  }
+  .trace-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .trace-result-feedback {
+    min-height: 24px;
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  /* 🖊️ 히라가나 쓰기 스피드게임 전용: 글자를 기존보다 2배 크게 보여주기 위해
+     쓰기 칸과 진행률 바를 정사각형으로 더 크게 잡습니다 */
+  .hw-canvas-wrap {
+    width: 260px;
+    height: 260px;
+  }
+  .hw-progress-row {
+    max-width: 260px;
+  }
+
+  /* 📝 히라가나 쓰기 워크시트 MODE STYLES */
+  .worksheet-container{
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 20px;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .worksheet-picker{ margin-bottom: 20px; }
+  .worksheet-picker-group{ margin-bottom:10px; }
+  .worksheet-picker-label{
+    font-size:11.5px; font-weight:700; color:#8a8272; margin-bottom:5px;
+  }
+  .worksheet-picker-row{ display:flex; flex-wrap:wrap; gap:6px; }
+  .worksheet-char-btn{
+    width:34px; height:34px;
+    border:1.5px solid var(--sumi);
+    border-radius:8px;
+    background:#fff;
+    font-family:'Shippori Mincho', serif;
+    font-weight:700; font-size:16px;
+    color:var(--sumi);
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: all .15s ease;
+    padding:0;
+  }
+  .worksheet-char-btn:hover{ transform:translateY(-1px); }
+  .worksheet-char-btn.active{
+    background:var(--hanko); border-color:var(--hanko); color:var(--washi);
+  }
+  .worksheet-header{ text-align:center; margin-bottom: 4px; }
+  .worksheet-title{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:22px;
+    color:var(--sumi);
+  }
+  .worksheet-title-mark{ color:var(--hanko); }
+  .worksheet-nameline{ font-size:12.5px; color:#7a7364; margin-top:4px; letter-spacing:0.03em; }
+  .worksheet-instruction{
+    font-size:13px; color:var(--indigo); font-weight:700;
+    text-align:center;
+    margin: 10px 0 14px;
+  }
+  .worksheet-demo-wrap{
+    width:260px; max-width:100%;
+    height:150px;
+    margin: 0 auto 18px;
+    border:2px solid var(--sumi);
+    border-radius:12px;
+    background:#fff;
+    position:relative;
+  }
+  .worksheet-demo-wrap canvas{ position:absolute; top:0; left:0; width:100%; height:100%; }
+  .worksheet-practice-row{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    flex-wrap:wrap;
+    margin-bottom: 16px;
+  }
+  .worksheet-practice-box{
+    width:90px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .worksheet-practice-canvas-wrap{
+    position:relative;
+    width:90px; height:100px;
+    border:1.5px dashed rgba(33,29,25,0.35);
+    border-radius:10px;
+    background:#fff;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .worksheet-practice-canvas-wrap canvas{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    touch-action:none;
+  }
+  .worksheet-practice-canvas-wrap canvas.worksheet-guide-canvas{ pointer-events:none; }
+  .worksheet-practice-canvas-wrap canvas.worksheet-draw-canvas{ cursor:crosshair; }
+  .worksheet-practice-box.worksheet-box-correct .worksheet-practice-canvas-wrap{
+    border: 2px solid var(--correct);
+    background: #f3fbf3;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15);
+  }
+  .worksheet-practice-box.worksheet-box-correct .worksheet-practice-canvas-wrap::after{
+    content: "✓";
+    position:absolute;
+    top:3px; right:5px;
+    width:18px; height:18px;
+    border-radius:50%;
+    background: var(--correct);
+    color:#fff;
+    font-size:12px;
+    font-weight:900;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+  }
+  .worksheet-practice-num{ font-size:11px; color:#8a8272; margin-top:4px; font-weight:700; }
+  .worksheet-buttons{
+    display:flex; justify-content:center; gap:8px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .worksheet-words-box{
+    background:#fff;
+    border:1.5px solid var(--line);
+    border-radius:12px;
+    padding:14px 16px;
+    max-width:420px;
+    margin: 0 auto;
+  }
+  .worksheet-words-title{
+    font-size:12.5px; font-weight:700; color:var(--indigo); margin-bottom:10px; text-align:center;
+  }
+  .worksheet-words-grid{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+  .worksheet-word-card{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    cursor:pointer;
+    width:70px;
+    background:none; border:none;
+  }
+  .worksheet-word-emoji{ font-size:28px; }
+  .worksheet-word-jp{ font-size:12.5px; font-weight:700; color:var(--sumi); }
+  .worksheet-word-kr{ font-size:10.5px; color:#8a8272; }
+  .worksheet-words-empty{ font-size:12.5px; color:#8a8272; text-align:center; }
+  .worksheet-nav-row{
+    display:flex; justify-content:center; align-items:center; gap:14px; margin-top:16px;
+  }
+
+  /* ✏️ 탁음・반탁음・요음・촉음 쓰기 테스트 (DT) MODE STYLES —
+     그림을 보고 빈칸에 알맞은 히라가나를 손으로 써보는 워크시트형 테스트입니다.
+     단어의 한 글자만 빈 칸(캔버스)으로 남겨두고 나머지 글자는 그대로 보여줍니다 */
+  .dt-container{
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 20px;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .dt-header{ text-align:center; margin-bottom: 4px; }
+  .dt-title{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:20px;
+    color:var(--sumi);
+  }
+  .dt-title-mark{ color:var(--hanko); }
+  .dt-subtitle{ font-size:12px; color:#8a8272; margin-top:6px; }
+  .dt-pager{
+    display:flex; justify-content:center; align-items:center; gap:14px;
+    margin: 14px 0 20px; flex-wrap:wrap;
+  }
+  .dt-pager-label{
+    font-family:'Shippori Mincho', serif;
+    font-weight:700; font-size:14px; color:var(--indigo);
+    min-width:100px; text-align:center;
+  }
+  .dt-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap:16px;
+    margin-bottom:18px;
+  }
+  .dt-card{
+    background:#fff;
+    border:1.5px solid var(--line);
+    border-radius:14px;
+    padding:14px 10px 12px;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  .dt-emoji{ font-size:42px; line-height:1; }
+  .dt-word-kr{ font-size:11px; color:#8a8272; }
+  .dt-chars-col{ display:flex; flex-direction:column; gap:6px; align-items:center; }
+  .dt-char-box{
+    width:52px; height:52px;
+    border:1.5px solid var(--line);
+    border-radius:8px;
+    background:#fdfaf3;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Shippori Mincho', serif;
+    font-weight:700; font-size:24px;
+    color:var(--sumi);
+  }
+  .dt-blank-wrap{
+    position:relative;
+    width:52px; height:52px;
+    border:1.5px dashed var(--hanko);
+    border-radius:8px;
+    background:#fff;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .dt-blank-wrap canvas{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    touch-action:none;
+  }
+  .dt-blank-wrap canvas.dt-guide-canvas{ pointer-events:none; }
+  .dt-blank-wrap canvas.dt-draw-canvas{ cursor:crosshair; }
+  .dt-blank-wrap.dt-blank-correct{
+    border:2px solid var(--correct);
+    background:#f3fbf3;
+    box-shadow: 0 0 0 3px rgba(46,125,50,0.15);
+  }
+  .dt-blank-wrap.dt-blank-correct::after{
+    content:"✓";
+    position:absolute; top:2px; right:3px;
+    width:16px; height:16px;
+    border-radius:50%;
+    background:var(--correct);
+    color:#fff; font-size:10.5px; font-weight:900;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+  }
+  .dt-card-controls{ display:flex; gap:6px; margin-top:2px; flex-wrap:wrap; justify-content:center; }
+  .dt-small-btn{
+    border:1.5px solid var(--sumi);
+    background:var(--washi);
+    border-radius:14px;
+    font-size:10.5px; font-weight:700;
+    padding:4px 9px;
+    cursor:pointer;
+    color:var(--sumi);
+  }
+  .dt-small-btn:hover{ background:#fff; }
+  .dt-bottom-controls{
+    display:flex; justify-content:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;
+  }
+
+  /* ✏️ 탁음・요음 쓰기 테스트 — 히라가나 쓰기 스피드게임처럼 한 화면에 문제 하나만
+     크게 보여주는 버전 전용 스타일. 이모지 아래로 글자 칸들을 세로로 쌓고,
+     주어진 글자 칸과 빈칸(쓰기 칸)을 모두 같은 크기의 정사각형으로 맞춥니다 */
+  .dt-game-emoji{ font-size:64px; margin-bottom:4px; }
+  .dt-game-word-kr{ font-size:15px; margin-bottom:18px; }
+  .dt-chars-row{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; max-width:230px; margin:0 auto 18px;
+  }
+  .dt-game-char-box{
+    width:100%; aspect-ratio:1/1;
+    border:1.5px solid var(--line);
+    border-radius:16px;
+    background:#fdfaf3;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Shippori Mincho', serif;
+    font-weight:700; font-size:72px;
+    color:var(--sumi);
+  }
+  .dt-game-blank-wrap{
+    width:100%; aspect-ratio:1/1;
+    height:auto;
+    border-color: rgba(183,65,14,0.55);
+    border-radius:16px;
+  }
+  .dt-game-blank-wrap.dt-blank-correct{
+    border:2px solid var(--correct);
+    background:#f3fbf3;
+  }
+  .dt-game-blank-wrap.dt-blank-wrong{
+    border:2px solid var(--wrong);
+    background:#fdf3f2;
+  }
+  #dtGuideCanvas{ pointer-events:none; }
+  #dtDrawCanvas{ cursor:crosshair; }
+  .dt-game-progress-row{ max-width:260px; }
+
+  /* 🃏 CARD MATCHING MODE STYLES */
+  .matching-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .grid-board {
+    display: grid;
+    gap: 10px;
+    justify-content: center;
+    margin: 20px auto 10px;
+    max-width: 100%;
+  }
+  
+  /* 난이도별 그리드 선언 */
+  .grid-4x4 {
+    grid-template-columns: repeat(4, 70px);
+    grid-template-rows: repeat(4, 70px);
+  }
+  .grid-6x6 {
+    grid-template-columns: repeat(6, 52px);
+    grid-template-rows: repeat(6, 52px);
+  }
+  .grid-8x8 {
+    grid-template-columns: repeat(8, 40px);
+    grid-template-rows: repeat(8, 40px);
+  }
+
+  /* 화면 폭이 모바일일 경우 카드 크기를 반응형으로 동적 축소 */
+  @media (max-width: 500px) {
+    .grid-4x4 {
+      grid-template-columns: repeat(4, 64px);
+      grid-template-rows: repeat(4, 64px);
+    }
+    .grid-6x6 {
+      grid-template-columns: repeat(6, 44px);
+      grid-template-rows: repeat(6, 44px);
+    }
+    .grid-8x8 {
+      grid-template-columns: repeat(8, 33px);
+      grid-template-rows: repeat(8, 33px);
+    }
+  }
+
+  /* 3D 뒤집기 카드 메커니즘 */
+  .card-item {
+    perspective: 1000px;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  .card-inner {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  .card-item.flipped .card-inner {
+    transform: rotateY(180deg);
+  }
+  .card-face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border: 2px solid var(--sumi);
+  }
+  
+  /* 카드 뒷면 (숨김 상태) */
+  .card-back {
+    background: var(--washi);
+    background-image: radial-gradient(var(--hanko) 20%, transparent 20%),
+                      radial-gradient(var(--hanko) 20%, transparent 20%);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;
+    transform: rotateY(0deg);
+  }
+  
+  /* 카드 앞면 (공개 상태) */
+  .card-front {
+    background: #ffffff;
+    transform: rotateY(180deg);
+  }
+  
+  /* 텍스트 단어용 카드 크기 조절 */
+  .card-front.text-node {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13.5px;
+    padding: 2px;
+    word-break: break-all;
+    line-height: 1.1;
+  }
+  .grid-4x4 .card-front.text-node {
+    font-size: 15px;
+  }
+  .grid-8x8 .card-front.text-node {
+    font-size: 10px;
+  }
+
+  /* 이모지 카드 크기 조절 */
+  .card-front.emoji-node {
+    font-size: 26px;
+  }
+  .grid-4x4 .card-front.emoji-node {
+    font-size: 32px;
+  }
+  .grid-8x8 .card-front.emoji-node {
+    font-size: 18px;
+  }
+
+  /* 매치 성공한 카드 숨김 혹은 비활성화 */
+  .card-item.matched {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.35;
+    transform: scale(0.95);
+    transition: opacity 0.4s, transform 0.4s;
+  }
+
+  /* ✏️ 선긋기(단어-뜻 연결) 게임 */
+  .linematch-container {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 20px;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .linematch-board {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+    margin-top: 18px;
+    min-height: 320px;
+  }
+  .linematch-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1 1 0;
+    z-index: 2;
+  }
+  .linematch-item {
+    background: #fff;
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.18s ease;
+    font-family: 'Shippori Mincho', serif;
+  }
+  .linematch-col.right-col .linematch-item {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 28px;
+    line-height: 1.2;
+  }
+  .linematch-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+  }
+  .linematch-item.selected {
+    background: var(--gold);
+    color: var(--washi);
+    border-color: var(--gold);
+  }
+  .linematch-item.matched {
+    background: var(--correct);
+    color: var(--washi);
+    border-color: var(--correct);
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+  .linematch-item.wrong-flash {
+    background: var(--wrong);
+    color: var(--washi);
+    border-color: var(--wrong);
+    animation: lineMatchShake 0.4s ease;
+  }
+  @keyframes lineMatchShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+  .linematch-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .linematch-clear-msg {
+    text-align: center;
+    margin-top: 18px;
+    font-weight: 700;
+    color: var(--correct);
+    font-size: 15px;
+    display: none;
+  }
+
+  /* 🔊 의성어·의태어 카드 게임 (뒤집지 않고 바로 보이는 카드 8장) */
+  .onomatopoeia-container {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 30px 24px;
+    text-align: center;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .onomatopoeia-prompt-box {
+    margin-bottom: 22px;
+  }
+  .onomatopoeia-prompt-text {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 800;
+    font-size: 38px;
+    letter-spacing: 0.05em;
+    margin: 12px 0 18px;
+    color: var(--indigo);
+  }
+  .onomatopoeia-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 10px 0 8px;
+  }
+  .onomatopoeia-card {
+    background: #fff;
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 14px 8px 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .onomatopoeia-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  }
+  .onomatopoeia-card .onomatopoeia-card-emoji {
+    font-size: 32px;
+    line-height: 1;
+    position: relative;
+    display: inline-block;
+  }
+  .onomatopoeia-card .onomatopoeia-card-word {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    font-weight: 700;
+    word-break: break-all;
+    line-height: 1.2;
+  }
+  .onomatopoeia-card .onomatopoeia-card-sound {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--hanko);
+    word-break: break-all;
+    line-height: 1.2;
+    min-height: 14px;
+  }
+  .onomatopoeia-card.correct-pick .onomatopoeia-card-sound {
+    color: var(--washi);
+  }
+  .onomatopoeia-card.correct-pick {
+    background: var(--correct);
+    border-color: var(--correct);
+    color: var(--washi);
+    cursor: default;
+    pointer-events: none;
+  }
+  .onomatopoeia-card.wrong-pick {
+    background: var(--wrong);
+    border-color: var(--wrong);
+    color: var(--washi);
+    animation: lineMatchShake 0.4s ease;
+  }
+  .onomatopoeia-card.disabled-pick {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+  }
+  @media (max-width: 560px) {
+    .onomatopoeia-cards { grid-template-columns: repeat(2, 1fr); }
+    .onomatopoeia-prompt-text { font-size: 28px; }
+    .onomatopoeia-card .onomatopoeia-card-emoji { font-size: 28px; }
+  }
+
+  /* fallback input */
+  details.fallback{
+    background:transparent;
+    margin-bottom:30px;
+  }
+  details.fallback summary{
+    cursor:pointer; font-size:13px; font-weight:700; color:var(--indigo);
+    list-style:none;
+  }
+  details.fallback summary::-webkit-details-marker{display:none;}
+  details.fallback summary::before{content:"⌨ "; }
+  .fallback-body{display:flex; gap:8px; margin-top:12px;}
+  .fallback-body input{
+    flex:1; font-family:'Shippori Mincho',serif; font-size:17px;
+    padding:10px 14px; border-radius:10px; border:1px solid var(--line);
+    background:var(--washi); color:var(--sumi);
+  }
+  .fallback-body button{
+    padding:10px 18px; border-radius:10px; border:1px solid var(--sumi);
+    background:var(--sumi); color:var(--washi); font-weight:700; font-size:13.5px; cursor:pointer;
+  }
+
+  /* word log */
+  .log-title{font-size:13px; font-weight:700; color:#6b6355; margin: 4px 0 10px;}
+  .log-list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:34px; min-height:20px;}
+  .log-chip{
+    font-size:13px; background:var(--washi-deep); border:1px solid var(--line);
+    padding:5px 10px 5px 6px; border-radius:20px; display:flex; align-items:center; gap:6px;
+  }
+
+  /* gallery */
+  .gallery-title{
+    font-family:'Shippori Mincho',serif; font-weight:700; font-size:20px; margin-bottom:4px;
+  }
+  .gallery-desc{font-size:12.5px; color:#8a8272; margin-bottom:16px;}
+  .gallery{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap:10px;
+  }
+  .gcard{
+    background:var(--washi-deep);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px 8px;
+    text-align:center;
+    transition: border-color .15s ease, transform .15s ease, background-color .15s ease;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .gcard:hover{border-color:var(--gold); transform:translateY(-2px); background-color: var(--washi);}
+  .gcard * {
+    pointer-events: none;
+  }
+  .gcard .emo{font-size:26px; position:relative; display:inline-block;}
+  .gcard .jp{font-family:'Shippori Mincho',serif; font-size:14px; margin-top:4px;}
+  
+  .gcard .kr{
+    font-size:12px;
+    color: var(--hanko);
+    font-weight: 700;
+    margin-top: 0px;
+    opacity: 0;
+    max-height: 0px;
+    overflow: hidden;
+    transition: opacity 0.2s ease, max-height 0.2s ease, margin-top 0.2s ease;
+  }
+  
+  .gcard.show-kr{
+    border-color: var(--gold) !important;
+    background-color: #fff !important;
+  }
+  .gcard.show-kr .kr{
+    opacity: 1 !important;
+    margin-top: 6px !important;
+    max-height: 40px !important;
+  }
+
+  /* 📊 정답률에 따른 단어카드 배경색 (전체 게임 모드 누적 통계 기준) */
+  .gcard.rate-green{
+    background-color: #DFF5E1;
+    border-color: #8FD19E;
+  }
+  .gcard.rate-yellow{
+    background-color: #FFF3B8;
+    border-color: #E3CB5A;
+  }
+  .gcard.rate-pink{
+    background-color: #FBD5E3;
+    border-color: #EE9AB8;
+  }
+
+  footer{margin-top:40px; font-size:11.5px; color:#a89f8e; text-align:center;}
+
+  /* 🎉 정답 축하 폭죽(confetti) 효과 — 화면 전체에 오버레이되어 성취감을 강화 */
+  .confetti-container{
+    position:fixed;
+    inset:0;
+    overflow:hidden;
+    pointer-events:none;
+    z-index:9999;
+  }
+  .confetti-piece{
+    position:absolute;
+    top:-12px;
+    opacity:0.95;
+    will-change: transform, opacity;
+    animation-name: confettiFall;
+    animation-timing-function: cubic-bezier(.25,.46,.45,.94);
+    animation-fill-mode: forwards;
+  }
+  .confetti-piece.shape-circle{ border-radius:50%; }
+  .confetti-piece.shape-strip{ border-radius:2px; }
+  .confetti-piece.shape-emoji{
+    font-size:18px;
+    line-height:1;
+  }
+  @keyframes confettiFall{
+    0%{ transform: translate(0,0) rotate(0deg); opacity:1; }
+    85%{ opacity:1; }
+    100%{ transform: translate(var(--drift), 105vh) rotate(var(--rot)); opacity:0; }
+  }
+
+  /* ✨ 정답 시 카드/이모지가 살짝 통통 튀며 강조되는 효과 */
+  @keyframes correctPulse{
+    0%{ transform: scale(1); }
+    35%{ transform: scale(1.14); }
+    60%{ transform: scale(0.97); }
+    100%{ transform: scale(1); }
+  }
+  .celebrate-bounce{
+    animation: correctPulse .5s cubic-bezier(.34,1.56,.64,1);
+  }
+
+  /* 🌟 정답 시 이모지가 화면 전체를 채울 만큼 커졌다가 다시 제자리 크기로 돌아오는 풀스크린 축하 연출
+     — 유아들이 "정답 = 크고 즐거운 반응"을 시각적으로 강렬하게 각인할 수 있도록 함 */
+  .fullscreen-celebrate-overlay{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+    z-index:9999;
+    opacity:0;
+  }
+  .fullscreen-celebrate-overlay .fc-emoji{
+    font-size:40px;
+    line-height:1;
+    transform:scale(1);
+    filter: drop-shadow(0 14px 34px rgba(0,0,0,0.28));
+  }
+  .fullscreen-celebrate-overlay.play{
+    animation: fcFade .95s ease forwards;
+  }
+  .fullscreen-celebrate-overlay.play .fc-emoji{
+    animation: fcZoom .95s cubic-bezier(.22,.85,.25,1) forwards;
+  }
+  @keyframes fcZoom{
+    0%{ transform:scale(1); }
+    45%{ transform:scale(9.5); }
+    100%{ transform:scale(1); }
+  }
+  @keyframes fcFade{
+    0%{ opacity:0; }
+    12%{ opacity:1; }
+    78%{ opacity:1; }
+    100%{ opacity:0; }
+  }
+</style>
+</head>
+<body>
+<div class="fullscreen-celebrate-overlay" id="fullscreenCelebrate" aria-hidden="true"><div class="fc-emoji" id="fullscreenCelebrateEmoji"></div></div>
+<div class="wrap">
+
+
+  <!-- ⚙️ 설정 패널: 연령대별 어휘 범위 선택 + 아기말투 토글 (초기 메뉴의 '설정' 카드에서 진입) -->
+  <div class="menu-level" id="menuSettingsLevel" style="display:none;">
+    <div class="menu-category-header">
+      <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+      <div class="menu-category-title">⚙️ 설정</div>
+      <span style="width:64px;"></span>
+    </div>
+
+  <div class="age-level-box">
+    <div class="age-level-label">👶 연령대별 단어 범위 (일본 아이 언어발달 단계 기준, 모든 게임에 공통 적용)</div>
+    <div class="level-select" id="ageLevelSelect">
+      <button class="lvl-btn" id="ageLvlBtn6" onclick="changeAppLevel(6)">6개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn9" onclick="changeAppLevel(9)">9개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn12" onclick="changeAppLevel(12)">12개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn18" onclick="changeAppLevel(18)">18개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn24" onclick="changeAppLevel(24)">24개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn30" onclick="changeAppLevel(30)">30개월 이하</button>
+      <button class="lvl-btn active" id="ageLvlBtn36" onclick="changeAppLevel(36)">36개월 이하</button>
+      <button class="lvl-btn" id="ageLvlBtn42" onclick="changeAppLevel(42)">36개월 초과</button>
+    </div>
+    <div class="age-level-count" style="margin-top:2px; margin-bottom:0;">* 연령 구간은 일본 영유아 언어발달 단계(옹알이~첫 단어~어휘 폭발~문장 확장)를 참고한 이 앱의 근사 기준이며, 개인차가 있을 수 있어요</div>
+
+    <div class="age-level-label" style="margin-top:14px;">🎓 JLPT 급수별 단어 범위 (연령대 범위와 함께 적용돼요)</div>
+    <div class="level-select" id="jlptLevelSelect">
+      <button class="lvl-btn active" data-jlpt="all" onclick="changeJlptFilter('all')">전체</button>
+      <button class="lvl-btn" data-jlpt="N5" onclick="changeJlptFilter('N5')">N5</button>
+      <button class="lvl-btn" data-jlpt="N4" onclick="changeJlptFilter('N4')">N4</button>
+    </div>
+    <div class="age-level-count" style="margin-top:2px; margin-bottom:0;">* JLPT 표기는 이 앱의 학습 참고용 근사치이며, 공식 급수 인증 기준이 아니에요</div>
+
+    <div class="age-level-label" style="margin-top:14px;">📚 주제별 단어 범위 (연령대 범위와 함께 적용돼요)</div>
+    <div class="level-select category-select-group" id="categorySelect">
+      <button class="lvl-btn active" data-cat="all" onclick="changeCategoryFilter('all')">전체</button>
+      <button class="lvl-btn" data-cat="animals" onclick="changeCategoryFilter('animals')">🐶 동물</button>
+      <button class="lvl-btn" data-cat="food" onclick="changeCategoryFilter('food')">🍎 음식</button>
+      <button class="lvl-btn" data-cat="body" onclick="changeCategoryFilter('body')">👀 신체</button>
+      <button class="lvl-btn" data-cat="nature" onclick="changeCategoryFilter('nature')">🌳 자연</button>
+      <button class="lvl-btn" data-cat="vehicles" onclick="changeCategoryFilter('vehicles')">🚗 탈것</button>
+      <button class="lvl-btn" data-cat="household" onclick="changeCategoryFilter('household')">🏠 생활용품</button>
+      <button class="lvl-btn" data-cat="colors" onclick="changeCategoryFilter('colors')">🎨 색깔·모양</button>
+      <button class="lvl-btn" data-cat="numbers" onclick="changeCategoryFilter('numbers')">🔢 숫자</button>
+      <button class="lvl-btn" data-cat="family" onclick="changeCategoryFilter('family')">👪 가족</button>
+      <button class="lvl-btn" data-cat="people" onclick="changeCategoryFilter('people')">👩‍⚕️ 사람(직업)</button>
+      <button class="lvl-btn" data-cat="clothes" onclick="changeCategoryFilter('clothes')">👕 옷</button>
+      <button class="lvl-btn" data-cat="toys" onclick="changeCategoryFilter('toys')">🧸 장난감·놀이</button>
+      <button class="lvl-btn" data-cat="greetings" onclick="changeCategoryFilter('greetings')">👋 인사말·표현</button>
+      <button class="lvl-btn" data-cat="position" onclick="changeCategoryFilter('position')">📍 위치·의문사</button>
+      <button class="lvl-btn" data-cat="season" onclick="changeCategoryFilter('season')">🍂 계절·시간</button>
+      <button class="lvl-btn" data-cat="emotions" onclick="changeCategoryFilter('emotions')">😊 감정</button>
+      <button class="lvl-btn" data-cat="verbs" onclick="changeCategoryFilter('verbs')">🏃 동작</button>
+      <button class="lvl-btn" data-cat="adjectives" onclick="changeCategoryFilter('adjectives')">✨ 성질(형용사)</button>
+      <button class="lvl-btn" data-cat="places" onclick="changeCategoryFilter('places')">🏫 장소</button>
+      <button class="lvl-btn" data-cat="events" onclick="changeCategoryFilter('events')">🎉 행사</button>
+    </div>
+
+    <div class="age-level-count" id="ageLevelCount">현재 <b>38</b>개 단어 사용 중</div>
+  </div>
+
+  <!-- 🍼 아기말투(motherese) TTS 토글 -->
+  <div class="babytalk-box">
+    <label>
+      <span class="babytalk-switch">
+        <input type="checkbox" id="babyTalkToggle" onchange="toggleBabyTalk(this.checked)">
+        <span class="babytalk-slider"></span>
+      </span>
+      <span class="babytalk-text">🍼 <b>아기말투로 듣기</b> — 천천히, 높은 톤으로 같은 단어를 2번 반복 재생해요</span>
+    </label>
+  </div>
+
+  <!-- 🇰🇷 한글 함께 보기 일괄 토글 — 모든 게임에 공통 적용, 개별 게임의 자체 토글보다 우선함 -->
+  <div class="babytalk-box">
+    <label>
+      <span class="babytalk-switch">
+        <input type="checkbox" id="koreanDisplayToggle" checked onchange="toggleKoreanDisplay(this.checked)">
+        <span class="babytalk-slider"></span>
+      </span>
+      <span class="babytalk-text">🇰🇷 <b>한글 함께 보기</b> — 모든 게임에서 한글 뜻·번역을 함께 보여줘요 (끄면 모든 게임에서 한글이 숨겨져요)</span>
+    </label>
+  </div>
+  </div>
+
+  <!-- 🗂️ 상위 메뉴: 기능 영역을 먼저 고릅니다 -->
+  <div class="menu-level" id="menuTopLevel">
+    <div class="menu-desc">배우고 싶은 영역을 먼저 골라주세요</div>
+    <div class="menu-grid" id="menuTopGrid"></div>
+  </div>
+
+  <!-- 🗂️ 하위 메뉴: 고른 영역 안의 세부 게임을 고릅니다 -->
+  <div class="menu-level" id="menuCategoryLevel" style="display:none;">
+    <div class="menu-category-header">
+      <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+      <div class="menu-category-title" id="menuCategoryTitle"></div>
+      <span style="width:64px;"></span>
+    </div>
+    <div class="menu-desc" id="menuCategoryDesc"></div>
+    <div class="menu-grid" id="menuCategoryGrid"></div>
+  </div>
+
+  <!-- Mode Selector Tabs (새 계층형 메뉴로 대체되어 화면에는 숨김 처리, 내부 로직 호환용으로 유지) -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchMode('speech')">소리로 쓰기</button>
+    <button class="tab-btn" onclick="switchMode('quiz')">단어 퀴즈 풀기 🎮</button>
+    <button class="tab-btn" onclick="switchMode('audioEmoji')">소리 듣고 이모지 맞히기 🎧</button>
+    <button class="tab-btn" onclick="switchMode('writing')">쓰기 게임 ✍️</button>
+    <button class="tab-btn" onclick="switchMode('matching')">짝 맞추기 카드 게임 🃏</button>
+    <button class="tab-btn" onclick="switchMode('pronounce')">발음 따라하기 🎤</button>
+    <button class="tab-btn" onclick="switchMode('sentence')">2단어 문장 맞히기 🗣️</button>
+    <button class="tab-btn" onclick="switchMode('scene')">하루 일과 씬 🌅</button>
+    <button class="tab-btn" onclick="switchMode('compound')">합성어 맞추기 🧩</button>
+    <button class="tab-btn" onclick="switchMode('exposure')">반복 노출 학습 🔁</button>
+    <button class="tab-btn" onclick="switchMode('songs')">손동작 노래 🎶</button>
+    <button class="tab-btn" onclick="switchMode('trace')">따라쓰기 트레이싱 🖊️</button>
+    <button class="tab-btn" onclick="switchMode('storybook')">엄마 목소리 동화책 📖</button>
+    <button class="tab-btn" onclick="switchMode('karaoke')">동요 가라오케 🎤</button>
+    <button class="tab-btn" onclick="switchMode('linematch')">선긋기 게임 📝</button>
+    <button class="tab-btn" onclick="switchMode('onomatopoeia')">의성어 카드 게임 🔊</button>
+    <button class="tab-btn" onclick="switchMode('ebook')">전자책 읽기 📚</button>
+    <button class="tab-btn" onclick="switchMode('riddle')">나는 무엇일까요? 🤔</button>
+    <button class="tab-btn" onclick="switchMode('qa')">질문에 답하기 ❓</button>
+    <button class="tab-btn" onclick="switchMode('lifeqa')">생활 문답 🌈</button>
+    <button class="tab-btn" onclick="switchMode('shop')">가게 게임 🏪</button>
+    <button class="tab-btn" onclick="switchMode('spelling')">철자 순서 맞추기 🔤</button>
+    <button class="tab-btn" onclick="switchMode('wordsearch')">낱말 찾기 퍼즐 🔍</button>
+    <button class="tab-btn" onclick="switchMode('worksheet')">히라가나 워크시트 📝</button>
+    <button class="tab-btn" onclick="switchMode('hiraganaSpeed')">히라가나 카드찾기 ⚡</button>
+    <button class="tab-btn" onclick="switchMode('wordMemory')">단어 메모리 게임 🧠</button>
+    <button class="tab-btn" onclick="switchMode('hiraganaWrite')">히라가나 쓰기 🖊️</button>
+    <button class="tab-btn" onclick="switchMode('dakuonTest')">탁음·요음 쓰기 테스트 ✏️</button>
+    <button class="tab-btn" onclick="switchMode('eawase')">그림 반쪽 맞추기 🧩</button>
+    <button class="tab-btn" onclick="switchMode('silhouette')">실루엣 맞추기 🌑</button>
+    <button class="tab-btn" onclick="switchMode('hiraganaRead')">히라가나 읽기 🎤</button>
+  </div>
+
+  <!-- 🖥️ 게임 실행 화면 — 게임을 고르면 이 영역이 전체화면으로 표시됩니다 -->
+  <div id="gameScreenContainer">
+    <button id="gameBackBtn" onclick="backToCategoryFromGame()">◀ 이전 메뉴</button>
+
+  <!-- SPEECH MODE CONTENT -->
+  <div id="speechMode" class="mode-content active">
+    <div class="control-row">
+      <button class="mic-btn" id="micBtn" aria-label="마이크 시작">
+        <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+      </button>
+      <div class="status-block">
+        <div class="status-label" id="statusLabel">마이크를 눌러 시작하세요</div>
+        <div class="status-sub" id="statusSub">일본어(ja-JP) 음성 인식을 사용합니다</div>
+      </div>
+    </div>
+
+    <div id="unsupportedMsg" class="unsupported-msg" style="display:none;">
+      이 브라우저(또는 현재 화면)에서는 음성 인식 API를 사용할 수 없어요. 아래 ⌨ 텍스트로 테스트하기를 이용해주세요.
+    </div>
+
+    <div class="paper">
+      <div class="stream" id="stream"></div>
+      <div class="placeholder" id="placeholder">여기에 인식된 히라가나가 표시됩니다…</div>
+    </div>
+
+    <div class="stamp-zone">
+      <div class="stamp-card" id="stampCard">
+        <div class="stamp-seal">認</div>
+        <div class="stamp-emoji" id="stampEmoji">🐱</div>
+        <div class="stamp-text">
+          <div class="jp" id="stampJp">ねこ</div>
+          <div class="romaji" id="stampRomaji">neko</div>
+          <div class="kr" id="stampKr">고양이</div>
+        </div>
+      </div>
+    </div>
+
+    <details class="fallback">
+      <summary>텍스트로 테스트하기 (마이크가 안 될 때)</summary>
+      <div class="fallback-body">
+        <input type="text" id="fallbackInput" placeholder="예: ねこ 또는 りんご" />
+        <button id="fallbackBtn">인식</button>
+      </div>
+    </details>
+  </div>
+
+  <!-- QUIZ MODE CONTENT -->
+  <div id="quizMode" class="mode-content">
+    <div class="quiz-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="quizScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="quizCombo">0</span></div>
+        <div>문제: <span id="quizProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="quizStartScreen">
+        <div class="hs-start-desc">발음을 듣고 5초 안에 알맞은 단어를 골라보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startQuizGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="quizQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="quizTimerFill"></div></div>
+        <div class="quiz-emoji" id="quizEmoji">❓</div>
+
+        <!-- TTS Play Button -->
+        <button class="quiz-audio-btn" id="quizAudioBtn" onclick="speakCurrentWord()">
+          🔊 발음 듣기
+        </button>
+
+        <div class="quiz-options" id="quizOptions">
+          <!-- Buttons will be injected here -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="quizResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="quizResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="quizResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="quizResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startQuizGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- AUDIO EMOJI GAME MODE CONTENT -->
+  <div id="audioEmojiMode" class="mode-content">
+    <div class="audio-emoji-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="audioEmojiScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="audioEmojiCombo">0</span></div>
+      </div>
+      
+      <div class="audio-prompt-box">
+        <div class="sound-wave-icon">🔊</div>
+      </div>
+
+      <!-- TTS Play Button -->
+      <button class="quiz-audio-btn" id="audioEmojiPlayBtn" onclick="speakAudioEmojiWord()">
+        🔊 다시 듣기
+      </button>
+
+      <div class="audio-emoji-options" id="audioEmojiOptions">
+        <!-- Buttons will be injected here -->
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🔤 SPELLING GAME MODE CONTENT (글자를 한 글자씩 듣고 순서대로 눌러 완성하기) -->
+  <div id="spellingMode" class="mode-content">
+    <div class="spelling-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="spellingScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="spellingCombo">0</span></div>
+      </div>
+
+      <div class="audio-prompt-box">
+        <div class="sound-wave-icon">🔤</div>
+        <div class="spelling-kr-hint" id="spellingKrHint">???</div>
+      </div>
+
+      <!-- 한 글자씩 순서대로 다시 들려주는 버튼 -->
+      <button class="quiz-audio-btn" id="spellingPlayBtn" onclick="playSpellingSequence()">
+        🔊 한 글자씩 다시 듣기
+      </button>
+
+      <!-- 지금까지 맞춘 글자를 순서대로 보여주는 칸 -->
+      <div class="spelling-answer-slots" id="spellingAnswerSlots">
+        <!-- JS가 동적으로 생성 -->
+      </div>
+
+      <!-- 섞여있는 히라가나 글자 버튼들 (순서대로 눌러야 함) -->
+      <div class="spelling-letter-options" id="spellingLetterOptions">
+        <!-- Buttons will be injected here -->
+      </div>
+
+      <div class="writing-result-feedback" id="spellingFeedback"></div>
+
+      <!-- 정답을 다 맞추면 이모지가 나타나고 전체 발음을 들려줍니다 -->
+      <div class="spelling-emoji-reveal" id="spellingEmojiReveal" style="display:none;">
+        <div class="spelling-emoji-big"></div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🔍 낱말 찾기 퍼즐 게임 MODE CONTENT -->
+  <div id="wordsearchMode" class="mode-content">
+    <div class="wordsearch-container">
+      <div class="quiz-score-board">
+        <div>찾은 단어: <span id="wsFoundCount">0</span> / 4</div>
+        <div>연속 콤보: 🔥<span id="wsCombo">0</span></div>
+      </div>
+
+      <!-- 격자 크기 선택 (4x4 ~ 8x8). 고르면 그 크기에 맞는 새 퍼즐이 바로 생성됩니다 -->
+      <div class="ws-size-row">
+        <button class="ws-size-btn" data-size="4" onclick="setWordSearchGridSize(4)">4×4</button>
+        <button class="ws-size-btn" data-size="5" onclick="setWordSearchGridSize(5)">5×5</button>
+        <button class="ws-size-btn" data-size="6" onclick="setWordSearchGridSize(6)">6×6</button>
+        <button class="ws-size-btn" data-size="7" onclick="setWordSearchGridSize(7)">7×7</button>
+        <button class="ws-size-btn active" data-size="8" onclick="setWordSearchGridSize(8)">8×8</button>
+      </div>
+
+      <!-- 찾아야 할 4개 단어의 이모지 힌트 (찾으면 색이 살아남) -->
+      <div class="ws-emoji-row" id="wsEmojiRow"></div>
+
+      <!-- 선택한 크기의 히라가나 격자. 가로/세로/대각선으로 손가락을 끌어 단어를 찾습니다 -->
+      <div class="ws-grid" id="wsGrid"></div>
+
+      <div class="ws-feedback" id="wsFeedback"></div>
+
+      <div class="ws-btn-row">
+        <button class="ws-new-btn" id="wsHintBtn" onclick="showWordSearchHint()">💡 힌트 보기</button>
+        <button class="ws-new-btn" onclick="renderWordSearchPuzzle()">🔄 새 퍼즐 만들기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🤔 '나는 무엇일까요?' 수수께끼 게임 MODE CONTENT -->
+  <div id="riddleMode" class="mode-content">
+    <div class="riddle-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="riddleScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="riddleCombo">0</span></div>
+      </div>
+
+      <div class="riddle-question-title">🤔 나는 무엇일까요?</div>
+
+      <div class="riddle-hint-list" id="riddleHintList">
+        <!-- JS가 지금까지 나온 힌트 문장을 순서대로 넣어줍니다 -->
+      </div>
+
+      <div class="riddle-hint-counter" id="riddleHintCounter"></div>
+
+      <div class="audio-emoji-options" id="riddleOptions">
+        <!-- JS가 이모지 보기를 넣어줍니다 -->
+      </div>
+
+      <div class="riddle-feedback" id="riddleFeedback"></div>
+    </div>
+    <br>
+  </div>
+
+  <!-- ❓ '질문에 답하기' 게임 MODE CONTENT -->
+  <div id="qaMode" class="mode-content">
+    <div class="qa-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="qaScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="qaCombo">0</span></div>
+      </div>
+
+      <div class="qa-emoji" id="qaEmoji">🍎</div>
+
+      <div class="qa-question-box">
+        <div class="qa-question-jp" id="qaQuestionJp"></div>
+      </div>
+
+      <button class="quiz-audio-btn" id="qaReplayBtn" onclick="replayQaQuestion()">
+        🔊 질문 다시 듣기
+      </button>
+
+      <div class="qa-choices" id="qaChoices">
+        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+      </div>
+
+      <div class="qa-feedback" id="qaFeedback"></div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🌈 '생활 문답' 게임 MODE CONTENT (시간·온도·날씨 등 생활 질문에 답하는 게임) -->
+  <div id="lifeqaMode" class="mode-content">
+    <div class="qa-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="lifeqaScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="lifeqaCombo">0</span></div>
+      </div>
+
+      <div class="lifeqa-topic-select" id="lifeqaTopicSelect">
+        <button class="lifeqa-topic-btn active" data-topic="all" onclick="changeLifeqaTopic('all')">전체</button>
+        <button class="lifeqa-topic-btn" data-topic="clock" onclick="changeLifeqaTopic('clock')">⏰ 시간</button>
+        <button class="lifeqa-topic-btn" data-topic="temperature" onclick="changeLifeqaTopic('temperature')">🌡️ 온도</button>
+        <button class="lifeqa-topic-btn" data-topic="weather" onclick="changeLifeqaTopic('weather')">☀️ 날씨</button>
+      </div>
+
+      <div class="lifeqa-row">
+        <div class="lifeqa-question-col qa-question-box">
+          <div class="qa-question-jp" id="lifeqaQuestionJp"></div>
+        </div>
+        <div class="lifeqa-image-col" id="lifeqaImage"></div>
+      </div>
+
+      <button class="quiz-audio-btn" id="lifeqaReplayBtn" onclick="replayLifeqaQuestion()">
+        🔊 질문 다시 듣기
+      </button>
+
+      <div class="qa-choices" id="lifeqaChoices">
+        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+      </div>
+
+      <div class="qa-feedback" id="lifeqaFeedback"></div>
+    </div>
+    <br>
+  </div>
+
+  <div id="shopMode" class="mode-content">
+    <div class="qa-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="shopScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="shopCombo">0</span></div>
+      </div>
+
+      <div class="shop-items-display" id="shopItemsDisplay">
+        <!-- JS가 과일/음식 이모지 4개와 가격을 넣어줍니다 -->
+      </div>
+
+      <div class="qa-question-box">
+        <div class="qa-question-jp" id="shopQuestionJp"></div>
+      </div>
+
+      <button class="quiz-audio-btn" id="shopReplayBtn" onclick="replayShopQuestion()">
+        🔊 질문 다시 듣기
+      </button>
+
+      <div class="qa-choices" id="shopChoices">
+        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+      </div>
+
+      <div class="qa-feedback" id="shopFeedback"></div>
+    </div>
+    <br>
+  </div>
+
+  <!-- WRITING GAME MODE CONTENT -->
+  <div id="writingMode" class="mode-content">
+    <div class="writing-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="writeScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="writeCombo">0</span></div>
+      </div>
+
+      <!-- 난이도 선택 버튼 -->
+      <div class="level-select">
+        <button class="lvl-btn active" id="lvlBtn1" onclick="changeLevel(1)">난이도 1 (따라 쓰기)</button>
+        <button class="lvl-btn" id="lvlBtn2" onclick="changeLevel(2)">난이도 2 (이모지 보고 쓰기)</button>
+        <button class="lvl-btn" id="lvlBtn3" onclick="changeLevel(3)">난이도 3 (듣고 받아쓰기)</button>
+      </div>
+
+      <!-- 입력형 타입 토글 선택 (A형 / B형) -->
+      <div class="type-select">
+        <button class="type-btn active" id="typeBtnA" onclick="changeInputType('A')">🅰️ A형 (히라가나 자판)</button>
+        <button class="type-btn" id="typeBtnB" onclick="changeInputType('B')">🅱️ B형 (마우스/터치 필기인식)</button>
+      </div>
+
+      <div class="writing-emoji" id="writeEmoji">❓</div>
+
+      <!-- 발음 재청취 버튼 -->
+      <button class="writing-audio-btn" id="writeAudioBtn" onclick="speakWritingWord()">
+        🔊 발음 듣기
+      </button>
+
+      <!-- 힌트 영역 -->
+      <div class="writing-target-box">
+        <div class="writing-jp-hint" id="writeJpHint">ねこ</div>
+        <div class="writing-kr-hint" id="writeKrHint">고양이</div>
+      </div>
+
+      <!-- 입력창 및 확인 버튼 -->
+      <div class="writing-input-row">
+        <input type="text" class="write-input" id="writeInput" placeholder="입력하세요" autocomplete="off" readonly />
+        <button class="write-submit-btn" onclick="checkWritingAnswer()">정답 확인</button>
+      </div>
+
+      <div class="writing-result-feedback" id="writeFeedback"></div>
+
+      <!-- [A형 가상 키보드 영역] -->
+      <div class="kana-keyboard-box" id="kanaKeyboard">
+        <div class="kbd-grid" id="kbdGrid">
+          <!-- JS가 동적으로 일본어 오십음도 패널 생성 -->
+        </div>
+      </div>
+
+      <!-- [B형 필기 인식 캔버스 영역] -->
+      <div class="handwriting-box" id="handwritingBox">
+        <div class="canvas-container">
+          <canvas id="paintCanvas" width="280" height="200"></canvas>
+        </div>
+        <div class="canvas-buttons">
+          <button class="canvas-btn" onclick="undoCanvas()">한 획 지우기</button>
+          <button class="canvas-btn" onclick="clearCanvas()">전체 지우기</button>
+        </div>
+        <div style="font-size: 11.5px; color:#8a8272; margin-bottom: 8px;">이 글자인가요? 아래 추천 글자를 터치하여 입력창에 넣어보세요!</div>
+        <div class="candidates-row" id="candidatesRow">
+          <span style="color:#a89f8e; font-size:13px;">필기 영역에 선을 그려보세요.</span>
+        </div>
+      </div>
+
+    </div>
+    <br>
+  </div>
+
+  <!-- 🃏 MATCHING CARD GAME MODE CONTENT -->
+  <div id="matchingMode" class="mode-content">
+    <div class="matching-container">
+      <div class="quiz-score-board">
+        <div>소요 시간: <span id="matchTimer">00:00</span></div>
+        <div>성공 매칭: <span id="matchCount">0</span> / <span id="matchTotal">0</span>쌍</div>
+      </div>
+      
+      <!-- 보드 크기 선택 옵션 -->
+      <div class="matching-controls">
+        <button class="lvl-btn active" id="sizeBtn4" onclick="changeMatchGridSize(4)">4 × 4</button>
+        <button class="lvl-btn" id="sizeBtn6" onclick="changeMatchGridSize(6)">6 × 6</button>
+        <button class="lvl-btn" id="sizeBtn8" onclick="changeMatchGridSize(8)">8 × 8</button>
+        <button class="lvl-btn" style="background: var(--sumi); color: var(--washi);" onclick="initMatchGame()">새로 시작 🔄</button>
+      </div>
+
+      <!-- 카드판 영역 -->
+      <div class="grid-board grid-4x4" id="gridBoard">
+        <!-- JS에 의해 카드가 삽입됩니다. -->
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- ✏️ 선긋기(단어-뜻 연결) 게임 MODE CONTENT -->
+  <div id="lineMatchMode" class="mode-content">
+    <div class="linematch-container">
+      <div class="quiz-score-board">
+        <div>맞춘 개수: <span id="lineMatchCount">0</span> / <span id="lineMatchTotal">5</span>쌍</div>
+      </div>
+      <button class="lvl-btn" style="background: var(--sumi); color: var(--washi);" onclick="initLineMatchGame()">새로 시작 🔄</button>
+
+      <div class="linematch-board" id="lineMatchBoard">
+        <svg class="linematch-svg" id="lineMatchSvg"></svg>
+        <div class="linematch-col" id="lineMatchLeftCol"></div>
+        <div class="linematch-col right-col" id="lineMatchRightCol"></div>
+      </div>
+
+      <div class="linematch-clear-msg" id="lineMatchClearMsg">🎉 모두 연결했어요! 잘했어요!</div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🔊 의성어·의태어 카드 게임 MODE CONTENT -->
+  <div id="onomatopoeiaMode" class="mode-content">
+    <div class="onomatopoeia-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="onomatopoeiaScore">0</span></div>
+        <div>연관된 단어 카드를 찾아보세요!</div>
+      </div>
+
+      <div class="onomatopoeia-prompt-box">
+        <div class="sound-wave-icon">🔊</div>
+        <div class="onomatopoeia-prompt-text" id="onomatopoeiaPromptText"></div>
+        <button class="lvl-btn" onclick="replayOnomatopoeiaPrompt()">다시 듣기 🔁</button>
+      </div>
+
+      <div class="onomatopoeia-cards" id="onomatopoeiaCards">
+        <!-- JS로 카드 8장이 삽입됩니다 -->
+      </div>
+
+      <button class="lvl-btn" style="background: var(--sumi); color: var(--washi); margin-top:18px;" onclick="generateOnomatopoeiaQuestion()">다음 문제 ▶</button>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🎤 PRONUNCIATION PRACTICE MODE CONTENT -->
+  <div id="pronounceMode" class="mode-content">
+    <div class="pronounce-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="pronounceScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="pronounceCombo">0</span></div>
+      </div>
+
+      <div class="writing-emoji" id="pronounceEmoji">❓</div>
+
+      <!-- TTS 발음 재생 버튼 -->
+      <button class="quiz-audio-btn" id="pronouncePlayBtn" onclick="speakPronounceWord()">
+        🔊 발음 다시 듣기
+      </button>
+
+      <!-- 정답 공개 영역 (정답을 맞히거나 여러 번 틀렸을 때 표시) -->
+      <div class="writing-target-box" id="pronounceAnswerBox" style="display:none;">
+        <div class="writing-jp-hint" id="pronounceJpHint">ねこ</div>
+        <div class="writing-kr-hint" id="pronounceKrHint">고양이</div>
+      </div>
+
+      <!-- 마이크로 따라 말하기 -->
+      <div class="control-row" style="justify-content:center; margin:22px 0 10px;">
+        <button class="mic-btn" id="pronounceMicBtn" aria-label="마이크로 따라 말하기">
+          <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+        </button>
+      </div>
+
+      <div class="status-block" style="align-items:center; text-align:center; margin:0 auto;">
+        <div class="status-label" id="pronounceStatusLabel">이모지를 보고 발음을 들어보세요</div>
+        <div class="status-sub" id="pronounceStatusSub">마이크를 눌러 따라 말해보세요</div>
+      </div>
+
+      <div class="writing-result-feedback" id="pronounceFeedback"></div>
+
+      <!-- 🗣️ 확장 발화(expansion) — 아이가 맞힌 단어를 캐릭터가 문장으로 확장해서 말해줘요 -->
+      <div class="expansion-box" id="pronounceExpansionBox">
+        <div class="expansion-label">🧸 이렇게도 말해봐요</div>
+        <div class="expansion-jp" id="pronounceExpansionJp"></div>
+        <div class="expansion-kr" id="pronounceExpansionKr"></div>
+      </div>
+
+      <div id="pronounceUnsupportedMsg" class="unsupported-msg" style="display:none; margin-top:10px;">
+        이 브라우저(또는 현재 화면)에서는 음성 인식 API를 사용할 수 없어요. 아래 ⌨ 텍스트로 테스트하기를 이용해주세요.
+      </div>
+
+      <details class="fallback" style="margin-top:16px;">
+        <summary>텍스트로 테스트하기 (마이크가 안 될 때)</summary>
+        <div class="fallback-body">
+          <input type="text" id="pronounceFallbackInput" placeholder="예: ねこ" />
+          <button id="pronounceFallbackBtn">확인</button>
+        </div>
+      </details>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🗣️ 2단어 문장 맞히기 MODE CONTENT -->
+  <div id="sentenceMode" class="mode-content">
+    <div class="sentence-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="sentenceScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="sentenceCombo">0</span></div>
+        <div>문제: <span id="sentenceQuestionProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="sentenceStartScreen">
+        <div class="hs-start-desc">문장을 듣고, 5초 안에 순서에 맞는 이모지 2개를 차례대로 눌러보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startSentenceGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="sentenceQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="sentenceTimerFill"></div></div>
+
+        <div style="font-size:13.5px; color:#7a7364; margin-bottom:6px;">
+          문장을 듣고, 순서에 맞는 이모지 2개를 차례대로 눌러보세요
+        </div>
+
+        <!-- TTS 문장 재생 버튼 -->
+        <button class="quiz-audio-btn" id="sentenceAudioBtn" onclick="speakCurrentSentence()">
+          🔊 문장 다시 듣기
+        </button>
+
+        <!-- 선택한 순서를 보여주는 진행 표시줄 -->
+        <div class="sentence-progress" id="sentenceProgress">
+          <span class="blank">❓</span> <span class="blank">❓</span>
+        </div>
+
+        <!-- 정답 문장/뜻 공개 영역 -->
+        <div class="writing-target-box" id="sentenceAnswerBox" style="display:none;">
+          <div class="writing-jp-hint" id="sentenceJpHint">まま だっこ</div>
+          <div class="writing-kr-hint" id="sentenceKrHint">엄마 안아줘</div>
+        </div>
+
+        <div class="sentence-options" id="sentenceOptions">
+          <!-- JS가 9개의 이모지 버튼을 동적으로 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="sentenceResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="sentenceResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="sentenceResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="sentenceResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startSentenceGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🌅 하루 일과 씬(scene) MODE CONTENT — 실제 아기가 배우듯 상황 속 반복 노출 -->
+  <div id="sceneMode" class="mode-content">
+    <div class="scene-container">
+      <div class="scene-desc">하루 일과 속에서 부모가 반복해서 하는 말을 그 상황 그대로 들어보세요. 문장은 자동으로 두 번씩 들려줘요.</div>
+
+      <div class="scene-select" id="sceneSelect">
+        <!-- JS가 장면 선택 버튼을 생성합니다 -->
+      </div>
+
+      <div class="scene-progress-dots" id="sceneProgressDots"></div>
+
+      <div class="scene-line-box">
+        <div class="scene-line-emoji" id="sceneLineEmoji">🌅</div>
+        <div class="scene-line-jp" id="sceneLineJp">-</div>
+        <div class="scene-line-romaji" id="sceneLineRomaji"></div>
+        <div class="scene-line-kr" id="sceneLineKr"></div>
+      </div>
+
+      <div class="scene-autoplay-row">
+        <label>
+          <input type="checkbox" id="sceneAutoplayToggle" checked>
+          자동으로 이어서 반복 듣기 (실제 육아 루틴처럼)
+        </label>
+      </div>
+
+      <div class="scene-nav-row">
+        <button class="scene-nav-btn" id="scenePrevBtn" onclick="prevSceneLine()">◀ 이전</button>
+        <button class="quiz-audio-btn" id="sceneReplayBtn" onclick="playSceneLine(false)" style="margin:0;">🔊 다시 듣기</button>
+        <button class="scene-nav-btn" id="sceneNextBtn" onclick="nextSceneLine()">다음 ▶</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🧩 합성어 맞추기 MODE CONTENT — 두 단어가 합쳐져 새 단어가 되는 과정을 익히는 게임 -->
+  <div id="compoundMode" class="mode-content">
+    <div class="sentence-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="compoundScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="compoundCombo">0</span></div>
+        <div>문제: <span id="compoundQuestionProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="compoundStartScreen">
+        <div class="hs-start-desc">단어를 듣고, 5초 안에 어떤 두 단어가 합쳐졌는지 순서에 맞는 이모지 2개를 차례대로 눌러보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startCompoundGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="compoundQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="compoundTimerFill"></div></div>
+
+        <div style="font-size:13.5px; color:#7a7364; margin-bottom:6px;">
+          이 단어는 어떤 두 단어가 합쳐져 만들어졌을까요? 순서에 맞는 이모지 2개를 차례대로 눌러보세요
+        </div>
+
+        <div class="writing-emoji" id="compoundTargetEmoji" style="font-size:56px;">🧩</div>
+
+        <!-- TTS 합성어 재생 버튼 -->
+        <button class="quiz-audio-btn" id="compoundAudioBtn" onclick="speakCurrentCompound()">
+          🔊 단어 다시 듣기
+        </button>
+
+        <!-- 선택한 순서를 보여주는 진행 표시줄 -->
+        <div class="sentence-progress" id="compoundProgress">
+          <span class="blank">❓</span> <span class="blank">❓</span>
+        </div>
+
+        <!-- 정답 분해/합성 결과 공개 영역 -->
+        <div class="writing-target-box" id="compoundAnswerBox" style="display:none;">
+          <div class="writing-jp-hint" id="compoundJpHint">あさ + ごはん = あさごはん</div>
+          <div class="writing-kr-hint" id="compoundKrHint">아침 + 밥 = 아침밥</div>
+        </div>
+
+        <div class="sentence-options" id="compoundOptions">
+          <!-- JS가 9개의 이모지 버튼을 동적으로 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="compoundResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="compoundResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="compoundResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="compoundResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startCompoundGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🔁 반복 노출(번역 없이) 학습 모드 -->
+  <div id="exposureMode" class="mode-content">
+    <div class="quiz-container">
+      <div style="font-size:13.5px; color:#7a7364; margin-bottom:10px; text-align:center;">
+        번역 없이 그림과 소리만 반복해서 들려드려요. 아기처럼 문맥과 반복만으로 뜻을 유추해보세요!
+      </div>
+
+      <div class="quiz-emoji" id="exposureEmoji">❓</div>
+
+      <button class="quiz-audio-btn" id="exposurePlayBtn" onclick="playExposureAudio()">
+        🔊 다시 듣기 (<span id="exposurePlayCount">0</span>/3)
+      </button>
+
+      <div class="exposure-progress-dots" id="exposureDots">
+        <span class="exposure-dot"></span><span class="exposure-dot"></span><span class="exposure-dot"></span>
+      </div>
+
+      <div id="exposureGuessArea" style="display:none; margin-top:18px;">
+        <div style="font-size:14px; font-weight:700; color:var(--indigo); margin-bottom:10px; text-align:center;">
+          이 단어는 무슨 뜻일까요? 뜻을 골라보세요
+        </div>
+        <div class="quiz-options" id="exposureOptions"></div>
+      </div>
+
+      <div class="writing-target-box" id="exposureAnswerBox" style="display:none; margin-top:16px;">
+        <div class="writing-jp-hint" id="exposureJpHint">ねこ</div>
+        <div class="writing-kr-hint" id="exposureKrHint">고양이</div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🎶 わらべうた 손동작 노래 모드 -->
+  <div id="songsMode" class="mode-content">
+    <div class="quiz-container">
+      <div style="font-size:13.5px; color:#7a7364; margin-bottom:14px; text-align:center;">
+        일본 전래동요를 손동작과 함께 따라 불러보세요. 노래를 고르면 가사와 손동작 힌트가 나와요
+      </div>
+
+      <div class="song-list" id="songList"></div>
+
+      <div id="songDetail" style="display:none; margin-top:6px;">
+        <div class="song-detail-title" id="songTitle"></div>
+        <div class="song-lyrics" id="songLyrics"></div>
+        <div class="control-row" style="justify-content:center; margin-top:16px; gap:10px; flex-wrap:wrap;">
+          <button class="quiz-audio-btn" id="songPlayAllBtn" onclick="playFullSong()">🎵 전체 따라 부르기</button>
+          <button class="lvl-btn" onclick="closeSongDetail()">◀ 목록으로</button>
+        </div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- ✍️ TRACE (따라쓰기 트레이싱) MODE CONTENT -->
+  <div id="traceMode" class="mode-content">
+    <div class="trace-container">
+      <div class="quiz-score-board">
+        <div>현재 점수: <span id="traceScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="traceCombo">0</span></div>
+      </div>
+
+      <div class="trace-emoji" id="traceEmoji">❓</div>
+      <div class="trace-speaking-hint" id="traceSpeakingHint">
+        <span class="trace-speaking-dot"></span> 발음이 2초 간격으로 들려와요
+      </div>
+      <div class="trace-kr-hint" id="traceKrHint">뜻</div>
+
+      <div class="trace-canvas-wrap">
+        <canvas id="traceGuideCanvas" width="320" height="170"></canvas>
+        <canvas id="traceDrawCanvas" width="320" height="170"></canvas>
+      </div>
+      <div style="font-size:11.5px; color:#8a8272; max-width:320px; margin:0 auto 14px;">🔢 주황색 숫자는 획 순서, 점선 화살표는 쓰는 방향이에요. 순서대로 따라 그어보세요!</div>
+
+      <div class="trace-progress-row">
+        <div class="trace-progress-track">
+          <div class="trace-progress-fill" id="traceProgressFill"></div>
+        </div>
+        <div class="trace-progress-label" id="traceProgressLabel">0%</div>
+      </div>
+
+      <div class="trace-buttons">
+        <button class="canvas-btn" onclick="clearTraceCanvas()">전체 지우기</button>
+        <button class="canvas-btn" onclick="replayTraceAudio()">🔊 다시 듣기</button>
+        <button class="canvas-btn" onclick="skipTraceWord()">다음 단어 ▶</button>
+      </div>
+
+      <div class="trace-result-feedback" id="traceFeedback"></div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 📝 히라가나 쓰기 워크시트 MODE CONTENT -->
+  <div id="worksheetMode" class="mode-content">
+    <div class="worksheet-container">
+      <div class="worksheet-picker" id="worksheetPicker">
+        <!-- JS가 글자 선택 그리드를 생성합니다 -->
+      </div>
+
+      <div class="worksheet-header">
+        <div class="worksheet-title">「<span class="worksheet-title-mark" id="worksheetTitleChar">あ</span>」の れんしゅう</div>
+        <div class="worksheet-nameline">なまえ　＿＿＿＿＿＿＿＿＿＿＿＿</div>
+      </div>
+
+      <div class="worksheet-instruction" id="worksheetInstruction">せんを なぞって、「あ」を かこう。</div>
+
+      <div class="worksheet-demo-wrap">
+        <canvas id="worksheetDemoCanvas" width="260" height="150"></canvas>
+      </div>
+      <div style="font-size:11.5px; color:#8a8272; max-width:320px; margin:0 auto 14px; text-align:center;">🔢 주황색 숫자는 획 순서예요. 아래 칸에서 점점 흐려지는 안내선을 따라 5번 써 보세요.</div>
+
+      <div class="worksheet-practice-row" id="worksheetPracticeRow">
+        <!-- JS가 연습 칸 5개를 생성합니다 -->
+      </div>
+
+      <div class="worksheet-buttons">
+        <button class="canvas-btn" onclick="clearAllWorksheetBoxes()">전체 지우기</button>
+        <button class="canvas-btn" onclick="speakTTS(currentWorksheetChar)">🔊 소리 듣기</button>
+      </div>
+
+      <div class="worksheet-words-box">
+        <div class="worksheet-words-title" id="worksheetWordsTitle">「あ」로 시작하는 단어는 무엇일까요?</div>
+        <div class="worksheet-words-grid" id="worksheetWordsGrid"></div>
+      </div>
+
+      <div class="worksheet-nav-row">
+        <button class="scene-nav-btn" onclick="prevWorksheetChar()">◀ 이전 글자</button>
+        <button class="scene-nav-btn" onclick="nextWorksheetChar()">다음 글자 ▶</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- ✏️ 탁음・반탁음・요음・촉음 쓰기 테스트 MODE CONTENT (5초 안에 빈칸에 알맞은 글자를 써보는 테스트) -->
+  <div id="dakuonTestMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="dtScore">0</span>점</div>
+        <div>문제: <span id="dtProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="dtStartScreen">
+        <div class="hs-start-desc">그림과 단어를 보고, 빈칸에 알맞은 히라가나를 5초 안에 써보세요! 흐린 글자와 획순 가이드를 참고할 수 있어요. 5초가 지나면 자동으로 채점되고, 맞히면 1점씩 올라가요. 총 10문제예요.</div>
+        <button class="quiz-audio-btn" onclick="startDtTestGame()">🚀 테스트 시작하기</button>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="dtQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="dtTimerFill"></div></div>
+
+        <div class="dt-emoji dt-game-emoji" id="dtEmoji">🐘</div>
+        <div class="dt-word-kr dt-game-word-kr" id="dtWordKr">코끼리</div>
+
+        <div class="dt-chars-row" id="dtCharsRow">
+          <!-- JS가 주어진 글자 박스 + 빈칸(안내선+쓰기) 캔버스를 생성합니다 -->
+        </div>
+
+        <div class="trace-progress-row dt-game-progress-row">
+          <div class="trace-progress-track">
+            <div class="trace-progress-fill" id="dtProgressFill"></div>
+          </div>
+          <div class="trace-progress-label" id="dtProgressLabel">0%</div>
+        </div>
+
+        <div class="trace-buttons">
+          <button class="canvas-btn" onclick="dtReplaySound()">🔊 다시 듣기</button>
+        </div>
+
+        <div class="trace-result-feedback" id="dtFeedback"></div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="dtResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="dtResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="dtResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startDtTestGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- ⚡ 히라가나 스피드게임 MODE CONTENT (2초 안에 발음에 맞는 글자 카드를 고르는 게임) -->
+  <div id="hiraganaSpeedMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="hsScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="hsCombo">0</span></div>
+        <div>문제: <span id="hsProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="hsStartScreen">
+        <div class="hs-start-desc">히라가나 발음이 나오면, 2초 안에 알맞은 글자 카드를 골라보세요! 총 10문제, 콤보가 이어질수록 점수가 더 올라가요.</div>
+        <button class="quiz-audio-btn" onclick="startHiraganaSpeedGame()">🚀 게임 시작하기</button>
+        <button class="hs-reset-stats-btn" onclick="resetHsCharStats()">🗑️ 통계 기록 초기화</button>
+
+        <!-- 문제마다 정답 카드를 포함해 몇 장의 히라가나 카드를 보여줄지 선택하는 옵션 -->
+        <div class="wm-sequence-label">카드 개수 (정답 카드 포함)</div>
+        <div class="hs-weight-row" id="hsCardCountRow">
+          <button class="lvl-btn active" id="hsCardCountBtn2" onclick="setHsCardCount(2)">2장</button>
+          <button class="lvl-btn" id="hsCardCountBtn3" onclick="setHsCardCount(3)">3장</button>
+          <button class="lvl-btn" id="hsCardCountBtn4" onclick="setHsCardCount(4)">4장</button>
+        </div>
+
+        <!-- 많이 틀린 글자가 얼마나 더 자주 나올지 선택하는 가중치 옵션 -->
+        <div class="wm-sequence-label">틀린 글자 출제 가중치</div>
+        <div class="hs-weight-row" id="hsWeightRow">
+          <button class="lvl-btn" id="hsWeightBtn0" onclick="setHsWeightLevel(0)">균등하게</button>
+          <button class="lvl-btn active" id="hsWeightBtn1" onclick="setHsWeightLevel(1)">약하게</button>
+          <button class="lvl-btn" id="hsWeightBtn3" onclick="setHsWeightLevel(3)">강하게</button>
+          <button class="lvl-btn" id="hsWeightBtn4" onclick="setHsWeightLevel(4)">오답만</button>
+          <button class="lvl-btn" id="hsWeightBtn5" onclick="setHsWeightLevel(5)">🧠 SRS 복습</button>
+        </div>
+        <div class="hs-srs-note" id="hsSrsNote">🧠 SRS 모드: 단순히 많이 틀린 글자가 아니라, <b>지금 잊어버릴 때가 된 글자</b>를 계산해서 우선 출제해요. 잘 맞히면 다음 복습 주기가 길어지고, 틀리면 주기가 확 짧아져서 곧 다시 만나게 돼요.</div>
+
+        <!-- 글자별 정답/오답 횟수와 오답률을 보여주는 46자 통계 그리드 -->
+        <div class="hs-stat-grid" id="hsStatGrid"></div>
+        <div class="hs-stat-legend">
+          <span><i style="background:#dcf3dd; border:1.5px solid #9ccf9f;"></i>오답률 10% 이하</span>
+          <span><i style="background:#fbecc2; border:1.5px solid #e0c368;"></i>오답률 30% 이하</span>
+          <span><i style="background:#f8d6d2; border:1.5px solid #e59a8f;"></i>오답률 30% 초과</span>
+          <span><i style="background:#fff; border:1.5px solid var(--line);"></i>아직 안 풀어본 글자</span>
+        </div>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="hsQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="hsTimerFill"></div></div>
+        <div class="hs-prompt-box">
+          <div class="hs-prompt-label">이 소리에 맞는 글자는?</div>
+          <div class="hs-prompt-romaji" id="hsPromptRomaji">a</div>
+          <button class="quiz-audio-btn" id="hsReplayBtn" onclick="hsReplaySound()">🔊 다시 듣기</button>
+        </div>
+        <div class="hs-cards" id="hsCards">
+          <!-- JS가 히라가나 글자 카드 2개를 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="hsResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="hsResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="hsResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수 (콤보 가산 포함): <b><span id="hsResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startHiraganaSpeedGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🖊️ 히라가나 쓰기 스피드게임 MODE CONTENT (5초 안에 히라가나 글자를 따라 써보는 게임) -->
+  <div id="hiraganaWriteMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="hwScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="hwCombo">0</span></div>
+        <div>문제: <span id="hwProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="hwStartScreen">
+        <div class="hs-start-desc">히라가나 글자가 나오면, 5초 안에 쓰기 칸에 그대로 따라 써보세요! 총 10문제이고, 한 글자당 딱 한 번만 쓸 수 있어요. 60% 이상 비슷하게 쓰면 성공이에요.</div>
+        <button class="quiz-audio-btn" onclick="startHiraganaWriteGame()">🚀 게임 시작하기</button>
+        <button class="hs-reset-stats-btn" onclick="resetHwCharStats()">🗑️ 통계 기록 초기화</button>
+
+        <!-- 많이 틀린(실패한) 글자가 얼마나 더 자주 나올지 선택하는 가중치 옵션 -->
+        <div class="wm-sequence-label">틀린 글자 출제 가중치</div>
+        <div class="hs-weight-row" id="hwWeightRow">
+          <button class="lvl-btn" id="hwWeightBtn0" onclick="setHwWeightLevel(0)">균등하게</button>
+          <button class="lvl-btn active" id="hwWeightBtn1" onclick="setHwWeightLevel(1)">약하게</button>
+          <button class="lvl-btn" id="hwWeightBtn3" onclick="setHwWeightLevel(3)">강하게</button>
+          <button class="lvl-btn" id="hwWeightBtn4" onclick="setHwWeightLevel(4)">오답만</button>
+          <button class="lvl-btn" id="hwWeightBtn5" onclick="setHwWeightLevel(5)">🧠 SRS 복습</button>
+        </div>
+        <div class="hs-srs-note" id="hwSrsNote">🧠 SRS 모드: 단순히 많이 틀린 글자가 아니라, <b>지금 잊어버릴 때가 된 글자</b>를 계산해서 우선 출제해요. 잘 쓰면 다음 복습 주기가 길어지고, 실패하면 주기가 확 짧아져서 곧 다시 만나게 돼요.</div>
+
+        <!-- 글자별 성공/실패 횟수와 실패율을 보여주는 46자 통계 그리드 (히라가나 스피드게임과는 별도로 집계) -->
+        <div class="hs-stat-grid" id="hwStatGrid"></div>
+        <div class="hs-stat-legend">
+          <span><i style="background:#dcf3dd; border:1.5px solid #9ccf9f;"></i>실패율 10% 이하</span>
+          <span><i style="background:#fbecc2; border:1.5px solid #e0c368;"></i>실패율 30% 이하</span>
+          <span><i style="background:#f8d6d2; border:1.5px solid #e59a8f;"></i>실패율 30% 초과</span>
+          <span><i style="background:#fff; border:1.5px solid var(--line);"></i>아직 안 풀어본 글자</span>
+        </div>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="hwQuestionScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="hwTimerFill"></div></div>
+        <div class="hs-prompt-box">
+          <div class="hs-prompt-label">5초 안에 이 글자를 따라 써보세요!</div>
+          <div class="hs-prompt-romaji" id="hwPromptRomaji">a</div>
+        </div>
+
+        <div class="trace-canvas-wrap hw-canvas-wrap">
+          <canvas id="hwGuideCanvas" width="260" height="260"></canvas>
+          <canvas id="hwDrawCanvas" width="260" height="260"></canvas>
+        </div>
+        <div style="font-size:11.5px; color:#8a8272; max-width:260px; margin:0 auto 14px;">🔢 주황색 숫자는 획 순서, 점선 화살표는 쓰는 방향이에요. 순서대로 따라 그어보세요!</div>
+
+        <div class="trace-progress-row hw-progress-row">
+          <div class="trace-progress-track">
+            <div class="trace-progress-fill" id="hwProgressFill"></div>
+          </div>
+          <div class="trace-progress-label" id="hwProgressLabel">0%</div>
+        </div>
+
+        <div class="trace-buttons">
+          <button class="canvas-btn" onclick="hwReplaySound()">🔊 다시 듣기</button>
+        </div>
+
+        <div class="trace-result-feedback" id="hwFeedback"></div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="hwResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">성공한 문제 개수: <b><span id="hwResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="hwResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수 (콤보 가산 포함): <b><span id="hwResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startHiraganaWriteGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🎤 히라가나 읽기 게임 MODE CONTENT (왼쪽 글자를 소리내어 읽으면 마이크로 인식해 판정하는 게임) -->
+  <div id="hiraganaReadMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>정답 점수: <span id="hrCorrectScore">0</span></div>
+        <div>오답 점수: <span id="hrWrongScore">0</span></div>
+        <div>문제: <span id="hrProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="hrStartScreen">
+        <div class="hs-start-desc">왼쪽에 나온 히라가나 글자를 소리 내어 읽어보세요! 마이크가 들은 소리를 인식해서 오른쪽에 보여줘요. 첫 시도에 맞히면 2점, 못 맞히면 2초 뒤 한 번 더 기회를 줘요 — 그때 맞히면 1점, 두 번 다 틀리면 오답 2점이 쌓여요. 총 10문제예요.</div>
+        <button class="quiz-audio-btn" onclick="startHiraganaReadGame()">🚀 게임 시작하기</button>
+        <button class="hs-reset-stats-btn" onclick="resetHrCharStats()">🗑️ 통계 기록 초기화</button>
+        <div id="hrUnsupportedMsg" class="unsupported-msg" style="display:none; margin-top:10px;">
+          이 브라우저는 음성 인식을 지원하지 않아요. 안드로이드 Chrome 브라우저를 사용해보세요.
+        </div>
+
+        <!-- 많이 틀린(실패한) 글자가 얼마나 더 자주 나올지 선택하는 가중치 옵션 -->
+        <div class="wm-sequence-label">틀린 글자 출제 가중치</div>
+        <div class="hs-weight-row" id="hrWeightRow">
+          <button class="lvl-btn" id="hrWeightBtn0" onclick="setHrWeightLevel(0)">균등하게</button>
+          <button class="lvl-btn active" id="hrWeightBtn1" onclick="setHrWeightLevel(1)">약하게</button>
+          <button class="lvl-btn" id="hrWeightBtn3" onclick="setHrWeightLevel(3)">강하게</button>
+          <button class="lvl-btn" id="hrWeightBtn4" onclick="setHrWeightLevel(4)">오답만</button>
+          <button class="lvl-btn" id="hrWeightBtn5" onclick="setHrWeightLevel(5)">🧠 SRS 복습</button>
+        </div>
+        <div class="hs-srs-note" id="hrSrsNote">🧠 SRS 모드: 단순히 많이 틀린 글자가 아니라, <b>지금 잊어버릴 때가 된 글자</b>를 계산해서 우선 출제해요. 잘 맞히면 다음 복습 주기가 길어지고, 실패하면 주기가 확 짧아져서 곧 다시 만나게 돼요.</div>
+
+        <!-- 글자별 성공/실패 횟수와 실패율을 보여주는 46자 통계 그리드 (히라가나 쓰기와는 별도로 집계) -->
+        <div class="hs-stat-grid" id="hrStatGrid"></div>
+        <div class="hs-stat-legend">
+          <span><i style="background:#dcf3dd; border:1.5px solid #9ccf9f;"></i>실패율 10% 이하</span>
+          <span><i style="background:#fbecc2; border:1.5px solid #e0c368;"></i>실패율 30% 이하</span>
+          <span><i style="background:#f8d6d2; border:1.5px solid #e59a8f;"></i>실패율 30% 초과</span>
+          <span><i style="background:#fff; border:1.5px solid var(--line);"></i>아직 안 풀어본 글자</span>
+        </div>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="hrQuestionScreen" style="display:none;">
+        <div class="hr-attempt-label" id="hrAttemptLabel">1번째 시도</div>
+
+        <div class="hr-columns">
+          <div class="hr-column">
+            <div class="hr-column-label">이 글자를 읽어보세요</div>
+            <div class="hr-target-char" id="hrTargetChar">あ</div>
+          </div>
+          <div class="hr-column">
+            <div class="hr-column-label">인식된 발음</div>
+            <div class="hr-recognized-char" id="hrRecognizedChar">🎤</div>
+          </div>
+        </div>
+
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="hrTimerFill"></div></div>
+
+        <div class="trace-result-feedback" id="hrFeedback"></div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="hrResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">정답 점수: <b><span id="hrResultCorrect">0</span>점</b></div>
+        <div class="hs-result-row hs-result-score">오답 점수: <b><span id="hrResultWrong">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startHiraganaReadGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🧠 단어 메모리 게임 MODE CONTENT (이모지+발음 순서를 기억해서 단어카드를 순서대로 누르는 게임) -->
+  <div id="wordMemoryMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="wmScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="wmCombo">0</span></div>
+        <div>문제: <span id="wmProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면: 기억할 단어 개수 선택 -->
+      <div id="wmStartScreen">
+        <div class="hs-start-desc">이모지와 발음이 순서대로 나온 다음, 아래 히라가나 단어 카드를 같은 순서로 눌러보세요! 기억할 단어 개수를 골라주세요.</div>
+        <div class="wm-size-row">
+          <button class="lvl-btn active" id="wmSizeBtn2" onclick="setWordMemoryCount(2)">2개</button>
+          <button class="lvl-btn" id="wmSizeBtn3" onclick="setWordMemoryCount(3)">3개</button>
+          <button class="lvl-btn" id="wmSizeBtn4" onclick="setWordMemoryCount(4)">4개</button>
+        </div>
+        <button class="quiz-audio-btn" onclick="startWordMemoryGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 이모지 + 발음 순차 재생 화면 -->
+      <div id="wmSequenceScreen" style="display:none;">
+        <div class="wm-sequence-label">잘 보고 들어보세요!</div>
+        <div class="quiz-emoji" id="wmSequenceEmoji">❓</div>
+        <div class="wm-sequence-dots" id="wmSequenceDots"></div>
+      </div>
+
+      <!-- 단어 카드 화면 (5초 안에 순서대로 클릭) -->
+      <div id="wmCardScreen" style="display:none;">
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="wmTimerFill"></div></div>
+        <div class="wm-cards-label">본 순서대로 카드를 눌러보세요!</div>
+        <div class="wm-cards" id="wmCards">
+          <!-- JS가 히라가나 단어 카드를 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="wmResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="wmResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="wmResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수 (콤보 가산 포함): <b><span id="wmResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startWordMemoryGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🧩 그림 반쪽 맞추기 MODE CONTENT (그림+글자가 반쪽씩 나오고, 나머지 글자를 골라 완성하는 게임) -->
+  <div id="eawaseMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="ewScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="ewCombo">0</span></div>
+        <div>문제: <span id="ewProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="ewStartScreen">
+        <div class="hs-start-desc">그림과 글자가 반쪽씩 나와요! 아래 글자 카드 중에서 나머지 반쪽을 찾아 눌러보세요. 정답을 고르면 그림과 단어가 완성되고, 소리 내어 읽어줘요.</div>
+        <button class="quiz-audio-btn" onclick="startEawaseGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 화면 -->
+      <div id="ewPlayScreen" style="display:none;">
+        <div class="ew-picture-box" id="ewPictureBox">
+          <div class="ew-picture-half ew-left">
+            <span class="ew-picture-emoji-inner" id="ewEmojiLeft"></span>
+          </div>
+          <div class="ew-picture-half ew-right" id="ewRightHalfBox">
+            <span class="ew-picture-card-back" id="ewRightCardBack">？</span>
+            <span class="ew-picture-emoji-inner" id="ewEmojiRight" style="display:none;"></span>
+          </div>
+        </div>
+        <div class="ew-word-box" id="ewWordBox">
+          <span class="ew-word-half ew-word-left" id="ewWordLeft"></span><span class="ew-word-half ew-word-right" id="ewWordRight">？</span>
+        </div>
+        <div class="ew-options-label">알맞은 글자를 찾아보세요!</div>
+        <div class="quiz-options" id="ewOptions">
+          <!-- JS가 글자 선택지 버튼을 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="ewResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="ewResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="ewResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수 (콤보 가산 포함): <b><span id="ewResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startEawaseGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🌑 실루엣 맞추기 MODE CONTENT (이모지 실루엣과 발음을 보고/듣고 히라가나 이름을
+       4지선다로 맞히면, 실루엣에 색이 채워지며 이름을 다시 읽어주는 게임) -->
+  <div id="silhouetteMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>점수: <span id="silScore">0</span>점</div>
+        <div>연속 콤보: 🔥<span id="silCombo">0</span></div>
+        <div>문제: <span id="silProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="silStartScreen">
+        <div class="hs-start-desc">까만 실루엣과 발음을 듣고, 아래 4개의 히라가나 이름 중에서 정답을 찾아보세요! 정답을 고르면 실루엣에 색이 채워지고, 이름을 한 글자씩 다시 읽어줘요.</div>
+        <button class="quiz-audio-btn" onclick="startSilhouetteGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 화면 -->
+      <div id="silPlayScreen" style="display:none;">
+        <div class="sil-picture-box" id="silPictureBox">
+          <span class="sil-emoji" id="silEmoji">❓</span>
+          <canvas class="sil-mosaic-canvas" id="silMosaicCanvas" width="220" height="200" style="display:none;"></canvas>
+          <div class="sil-jigsaw" id="silJigsaw" style="display:none;">
+            <div class="sil-jigsaw-piece" data-piece="0"><span class="sil-emoji-copy"></span></div>
+            <div class="sil-jigsaw-piece" data-piece="1"><span class="sil-emoji-copy"></span></div>
+            <div class="sil-jigsaw-piece" data-piece="2"><span class="sil-emoji-copy"></span></div>
+            <div class="sil-jigsaw-piece" data-piece="3"><span class="sil-emoji-copy"></span></div>
+          </div>
+        </div>
+        <button class="quiz-audio-btn" id="silReplayBtn" onclick="silReplaySound()">🔊 다시 듣기</button>
+        <div class="sil-word-reveal" id="silWordReveal"></div>
+        <div class="sil-options-label">알맞은 이름을 찾아보세요!</div>
+        <div class="quiz-options" id="silOptions">
+          <!-- JS가 히라가나 이름 선택지 버튼을 생성합니다 -->
+        </div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="silResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="silResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="silResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수 (콤보 가산 포함): <b><span id="silResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startSilhouetteGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 📖 엄마 목소리 동화책 읽어주기 MODE CONTENT -->
+  <div id="storybookMode" class="mode-content">
+    <div class="storybook-container">
+      <div class="storybook-desc">일본 엄마들이 36개월 이하 아이에게 자주 읽어주는 짧은 그림동화예요. 책을 골라보세요. 페이지마다 문장을 소리 내어 읽어주면서 해당 히라가나 글자를 순서대로 하이라이트 해드려요.</div>
+
+      <div class="storybook-shelf" id="storybookShelf">
+        <!-- JS가 책 표지 목록을 생성합니다 -->
+      </div>
+
+      <div id="storybookReader" style="display:none;">
+        <div class="storybook-reader-header">
+          <button class="lvl-btn" onclick="closeStorybookReader()">◀ 책장으로</button>
+          <div class="storybook-reader-title" id="storybookReaderTitle"></div>
+          <span style="width:64px;"></span>
+        </div>
+
+        <div class="scene-progress-dots" id="storybookProgressDots"></div>
+
+        <div class="storybook-page-box">
+          <div class="storybook-page-emoji" id="storybookPageEmoji">📖</div>
+          <div class="storybook-page-jp" id="storybookPageJp">-</div>
+          <div class="storybook-page-romaji" id="storybookPageRomaji"></div>
+          <div class="storybook-page-kr" id="storybookPageKr"></div>
+        </div>
+
+        <div class="storybook-autoplay-row">
+          <label>
+            <input type="checkbox" id="storybookAutoplayToggle" checked>
+            엄마 목소리로 이어서 자동으로 읽어주기
+          </label>
+        </div>
+
+        <div class="scene-nav-row">
+          <button class="scene-nav-btn" id="storybookPrevBtn" onclick="prevStorybookPage()">◀ 이전 페이지</button>
+          <button class="quiz-audio-btn" id="storybookReplayBtn" onclick="playStorybookPage(false)" style="margin:0;">🔊 다시 읽어주기</button>
+          <button class="scene-nav-btn" id="storybookNextBtn" onclick="nextStorybookPage()">다음 페이지 ▶</button>
+        </div>
+
+        <div class="storybook-end-msg" id="storybookEndMsg" style="display:none;">🎉 다 읽었어요! "책장으로"를 눌러 다른 책을 골라보세요</div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🍎 이모지 동화책 MODE CONTENT — 과일 이모지 10가지를 주인공으로 한 짧은 동화책 -->
+  <div id="emojiStorybookMode" class="mode-content">
+    <div class="storybook-container">
+      <div class="storybook-desc">과일 이모지 10가지의 짧은 동화책이에요. 과일을 골라보세요. 색깔, 모양, 크기, 향, 이 과일을 좋아하는 동물 이야기를 페이지마다 소리 내어 읽어드려요.</div>
+
+      <div class="storybook-shelf" id="emojiStorybookShelf">
+        <!-- JS가 과일 책 표지 목록을 생성합니다 -->
+      </div>
+
+      <div id="emojiStorybookReader" style="display:none;">
+        <div class="storybook-reader-header">
+          <button class="lvl-btn" onclick="closeEmojiStorybookReader()">◀ 책장으로</button>
+          <div class="storybook-reader-title" id="emojiStorybookReaderTitle"></div>
+          <span style="width:64px;"></span>
+        </div>
+
+        <div class="scene-progress-dots" id="emojiStorybookProgressDots"></div>
+
+        <div class="storybook-page-box">
+          <div class="storybook-page-emoji" id="emojiStorybookPageEmoji">🍎</div>
+          <div class="storybook-page-jp" id="emojiStorybookPageJp">-</div>
+          <div class="storybook-page-romaji" id="emojiStorybookPageRomaji"></div>
+          <div class="storybook-page-kr" id="emojiStorybookPageKr"></div>
+        </div>
+
+        <div class="storybook-autoplay-row">
+          <label>
+            <input type="checkbox" id="emojiStorybookAutoplayToggle" checked>
+            이어서 자동으로 읽어주기
+          </label>
+        </div>
+        <div class="storybook-autoplay-row">
+          <label>
+            <input type="checkbox" id="emojiStorybookKoreanToggle" checked onchange="toggleEmojiStorybookKorean()">
+            한글 함께 보기
+          </label>
+        </div>
+        <div class="storybook-autoplay-row">
+          <label>
+            <input type="checkbox" id="emojiStorybookBabyTalkToggle" checked onchange="toggleEmojiStorybookBabyTalk()">
+            아기말투 문장으로 보기 (끄면 조사·です/ます를 갖춘 문장으로 봐요)
+          </label>
+        </div>
+
+        <div class="scene-nav-row">
+          <button class="scene-nav-btn" id="emojiStorybookPrevBtn" onclick="prevEmojiStorybookPage()">◀ 이전 페이지</button>
+          <button class="quiz-audio-btn" id="emojiStorybookReplayBtn" onclick="playEmojiStorybookPage(false)" style="margin:0;">🔊 다시 읽어주기</button>
+          <button class="scene-nav-btn" id="emojiStorybookNextBtn" onclick="nextEmojiStorybookPage()">다음 페이지 ▶</button>
+        </div>
+
+        <div class="storybook-end-msg" id="emojiStorybookEndMsg" style="display:none;">🎉 다 읽었어요! "책장으로"를 눌러 다른 과일을 골라보세요</div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 📚 전자책 읽기 MODE CONTENT -->
+  <div id="ebookMode" class="mode-content">
+    <div class="storybook-container">
+      <div class="storybook-desc">니혼고 다독(たどく) 문고가 CC BY-NC-ND 라이선스로 무료 공개한 그림책들이에요. 표지와 공식 낭독 음성을 담았고, "PDF로 읽기"를 누르면 tadoku.org 서버에 있는 원본 PDF 파일을 새 탭에서 곧바로 불러와 보여줘요(내용을 옮겨 싣거나 재구성하지 않아요). 전체 이야기는 "원문 전체 읽기" 버튼으로도 tadoku.org에서 바로 읽을 수 있어요.</div>
+
+      <div id="ebookLevelFilter" class="ebook-level-filter"></div>
+
+      <div class="storybook-shelf" id="ebookShelf">
+        <!-- JS가 전자책 표지 목록을 생성합니다 -->
+      </div>
+
+      <div id="ebookReader" style="display:none;">
+        <div class="storybook-reader-header">
+          <button class="lvl-btn" onclick="closeEbookReader()">◀ 책장으로</button>
+          <div class="storybook-reader-title" id="ebookReaderTitle"></div>
+          <span style="width:64px;"></span>
+        </div>
+
+        <div class="ebook-page-box">
+          <div id="ebookImageView">
+            <img class="ebook-page-image" id="ebookPageImage" src="" alt="" style="max-height:340px; object-fit:contain;">
+            <div class="ebook-page-caption" id="ebookLevelBadge"></div>
+            <div class="storybook-page-kr" id="ebookDesc"></div>
+          </div>
+          <div id="ebookPdfView" style="display:none;">
+            <iframe id="ebookPdfFrame" class="ebook-pdf-frame" src="" title="tadoku.org 원본 PDF"></iframe>
+            <div class="ebook-pdf-caption">이 PDF는 tadoku.org 서버에 있는 원본 파일을 그대로 불러온 것입니다. 안 보이면 아래 링크로 새 탭에서 여세요.</div>
+            <a id="ebookPdfDirectLink" href="#" target="_blank" rel="noopener" class="ebook-pdf-direct-link">PDF 새 탭에서 열기 ↗</a>
+          </div>
+        </div>
+
+        <div class="scene-nav-row">
+          <button class="quiz-audio-btn" id="ebookPlayBtn" onclick="toggleEbookAudio()" style="margin:0;">🔊 낭독 듣기</button>
+          <button class="quiz-audio-btn" id="ebookPdfBtn" onclick="toggleEbookPdf()" style="margin:0;">📄 PDF로 읽기</button>
+          <a class="scene-nav-btn" id="ebookSourceLink" href="#" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">원문 전체 읽기 ↗</a>
+        </div>
+
+        <audio id="ebookAudioEl" style="display:none;"></audio>
+
+        <div class="ebook-license" id="ebookLicense"></div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🎤🎶 동요 가라오케 MODE CONTENT -->
+  <div id="karaokeMode" class="mode-content">
+    <div class="karaoke-container">
+      <div class="karaoke-desc">일본 엄마들이 36개월 전후 아이에게 자주 불러주는 손유희·전래 동요 20곡이에요. 노래를 고르면 노래방 자막처럼 가사가 실시간으로 하이라이트되고, 가사에 맞는 이모지가 함께 떠요.</div>
+
+      <div class="karaoke-list" id="karaokeList"></div>
+
+      <div id="karaokePlayer" style="display:none;">
+        <div class="karaoke-player-header">
+          <button class="lvl-btn" onclick="closeKaraokeSong()">◀ 목록으로</button>
+          <div class="karaoke-player-title" id="karaokeTitle"></div>
+          <span style="width:64px;"></span>
+        </div>
+
+        <div class="scene-progress-dots" id="karaokeProgressDots"></div>
+
+        <div class="karaoke-stage">
+          <div class="karaoke-stage-emoji" id="karaokeStageEmoji">🎵</div>
+          <div class="karaoke-lyrics-box" id="karaokeLyricsBox"></div>
+        </div>
+
+        <div class="karaoke-autoplay-row">
+          <label><input type="checkbox" id="karaokeAutoplayToggle" checked> 노래방처럼 이어서 자동 재생</label>
+          <label><input type="checkbox" id="karaokeChimeToggle" checked> 🎹 피아노 반주 함께 듣기</label>
+        </div>
+
+        <div class="scene-nav-row">
+          <button class="scene-nav-btn" id="karaokePrevBtn" onclick="prevKaraokeLine()">◀ 이전 소절</button>
+          <button class="quiz-audio-btn" id="karaokePlayBtn" onclick="playKaraokeSong()" style="margin:0;">▶ 처음부터 부르기</button>
+          <button class="scene-nav-btn" id="karaokeNextBtn" onclick="nextKaraokeLine()">다음 소절 ▶</button>
+        </div>
+
+        <div class="scene-nav-row">
+          <button class="quiz-audio-btn" id="karaokeRealVoiceBtn" onclick="toggleKaraokeRealVoice()" style="display:none;margin:0;">👩 실제 노래 참고로 듣기</button>
+        </div>
+        <audio id="karaokeRealVoiceAudio" preload="none"></audio>
+
+        <div class="storybook-end-msg" id="karaokeEndMsg" style="display:none;">🎉 다 불렀어요! "목록으로"를 눌러 다른 노래를 골라보세요</div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🌱🐘 형용사 배우기 MODE CONTENT (ちびむすドリル 반의어 형용사 워크시트 기반:
+       ふとい・ほそい/ながい・みじかい/たかい・ひくい/おおい・すくない/おおきい・ちいさい
+       5개 짝을 골라, 두 모양(굵기/길이/높이/양/크기)을 비교해 알맞은 쪽을 찾는 게임) -->
+  <div id="adjectiveMode" class="mode-content">
+    <div class="hs-container" id="adjShelfScreen">
+      <div class="hs-start-desc">서로 반대되는 뜻을 가진 형용사 5짝을 배워요! 배우고 싶은 짝을 골라보세요.</div>
+      <div class="adj-shelf" id="adjShelfGrid"><!-- JS가 형용사 짝 카드 목록을 생성합니다 --></div>
+    </div>
+
+    <div id="adjPracticeScreen" style="display:none;">
+      <div class="adj-header">
+        <button class="lvl-btn" onclick="backToAdjShelf()">◀ 목록으로</button>
+        <div class="adj-header-title" id="adjHeaderTitle"></div>
+        <span style="width:64px;"></span>
+      </div>
+
+      <!-- 소개 화면: 대표 예시 하나로 두 형용사의 뜻을 먼저 보여줍니다 -->
+      <div id="adjIntroScreen">
+        <div class="adj-intro-box">
+          <div class="adj-intro-emoji" id="adjIntroEmoji"></div>
+          <div class="adj-intro-word" id="adjIntroWord"></div>
+          <div class="adj-intro-desc" id="adjIntroDesc"></div>
+          <div class="adj-intro-shapes" id="adjIntroShapes"><!-- JS가 큰 모양/작은 모양을 생성합니다 --></div>
+          <button class="quiz-audio-btn" onclick="speakAdjIntro()">🔊 들어보기</button>
+        </div>
+        <button class="quiz-audio-btn" onclick="startAdjectiveQuiz()">🚀 문제 풀어보기</button>
+      </div>
+
+      <!-- 비교 퀴즈 화면 -->
+      <div id="adjQuizScreen" style="display:none;">
+        <div class="adj-progress" id="adjProgress"></div>
+        <div class="adj-quiz-box">
+          <div class="adj-item-label">다음 낱말을 보고, 알맞은 쪽을 찾아보세요</div>
+          <div class="adj-item-jp" id="adjItemJp"></div>
+          <div class="adj-prompt" id="adjPrompt"></div>
+          <div class="adj-shapes-row" id="adjShapesRow"><!-- JS가 두 모양 버튼을 생성합니다 --></div>
+          <div class="adj-feedback" id="adjFeedback"></div>
+          <div class="adj-reveal-sentence" id="adjRevealSentence"></div>
+          <button class="quiz-audio-btn" id="adjNextBtn" onclick="nextAdjQuestion()" style="display:none;">다음 ▶</button>
+        </div>
+      </div>
+
+      <!-- 분류 퀴즈 화면 (おおい・すくない / おおきい・ちいさい 짝에만 있음) -->
+      <div id="adjClassifyScreen" style="display:none;">
+        <div class="adj-progress" id="adjClassifyProgress"></div>
+        <div class="hs-start-desc" id="adjClassifyPrompt"></div>
+        <div class="adj-classify-word-box">
+          <div class="adj-classify-jp" id="adjClassifyJp"></div>
+          <div class="adj-classify-kr" id="adjClassifyKr"></div>
+        </div>
+        <div class="adj-classify-btn-row" id="adjClassifyBtnRow"><!-- JS가 그룹 선택 버튼 2개를 생성합니다 --></div>
+        <div class="adj-feedback" id="adjClassifyFeedback"></div>
+        <button class="quiz-audio-btn" id="adjClassifyNextBtn" onclick="nextAdjClassify()" style="display:none;">다음 ▶</button>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="adjResultScreen" style="display:none;">
+        <div class="hs-container">
+          <div class="hs-result-title">🎉 결과 발표!</div>
+          <div class="hs-result-row">맞힌 문제 개수: <b><span id="adjResultCorrect">0</span> / <span id="adjResultTotal">0</span></b></div>
+          <button class="quiz-audio-btn" onclick="restartAdjectiveSet()">🔄 다시 하기</button>
+          <button class="quiz-audio-btn" onclick="backToAdjShelf()">📋 목록으로</button>
+        </div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🈴 한자 플래시카드: 초등 1학년 한자를 큰 글씨 + 그림 이모지 + 낱말 3개로 익히는 카드 -->
+  <div id="kanjiCardsMode" class="mode-content">
+    <div class="hs-container">
+      <div class="kc-grid-wrap" id="kcGridScreen">
+        <div class="kc-grid-desc">한자를 눌러서 큰 카드로 자세히 봐요. 카드에서는 소리도 들을 수 있어요.</div>
+        <div class="kc-grid" id="kcGrid"><!-- JS가 한자 타일을 생성합니다 --></div>
+      </div>
+
+      <div class="kc-card-screen" id="kcCardScreen" style="display:none;">
+        <div class="kc-progress" id="kcProgress">1 / 40</div>
+
+        <div class="kc-card" id="kcCard" onclick="flipKanjiCard()">
+          <div class="kc-card-face kc-card-front" id="kcCardFront">
+            <div class="kc-char" id="kcChar">天</div>
+            <div class="kc-emoji" id="kcEmoji">🌤️</div>
+          </div>
+          <div class="kc-card-face kc-card-back" id="kcCardBack" style="display:none;">
+            <div class="kc-reading" id="kcReading">てん</div>
+            <div class="kc-words" id="kcWords"><!-- JS가 낱말 3개를 생성합니다 --></div>
+          </div>
+        </div>
+        <div class="kc-hint">카드를 눌러서 뒤집어 보세요 (한자 ↔ 읽기·낱말)</div>
+
+        <div class="scene-nav-row">
+          <button class="scene-nav-btn" onclick="prevKanjiCard()">◀ 이전 한자</button>
+          <button class="quiz-audio-btn" style="margin:0;" onclick="speakCurrentKanjiCard()">🔊 소리 듣기</button>
+          <button class="scene-nav-btn" onclick="nextKanjiCard()">다음 한자 ▶</button>
+        </div>
+        <button class="quiz-audio-btn" onclick="showKanjiGrid()">🈴 전체 카드 목록으로</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  </div> <!-- /#gameScreenContainer -->
+
+  <!-- 📇 단어 카드 패널: 오늘 맞춘 단어 + 전체 단어 카드 갤러리 (초기 메뉴의 '단어 카드' 카드에서 진입) -->
+  <div class="menu-level" id="menuWordcardsLevel" style="display:none;">
+    <div class="menu-category-header">
+      <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+      <div class="menu-category-title">📇 단어 카드</div>
+      <span style="width:64px;"></span>
+    </div>
+
+  <!-- 주제별 카테고리 필터 — 설정의 '주제별 단어 범위' 필터와 같은 값을 공유하며,
+       여기서 고르면 아래 단어 카드 갤러리(와 다른 게임들)에도 함께 적용됩니다 -->
+  <div class="age-level-label" style="margin-top:0;">📚 주제별로 필터</div>
+  <div class="level-select category-select-group" id="wordcardsCategorySelect">
+    <button class="lvl-btn active" data-cat="all" onclick="changeCategoryFilter('all')">전체</button>
+    <button class="lvl-btn" data-cat="animals" onclick="changeCategoryFilter('animals')">🐶 동물</button>
+    <button class="lvl-btn" data-cat="food" onclick="changeCategoryFilter('food')">🍎 음식</button>
+    <button class="lvl-btn" data-cat="body" onclick="changeCategoryFilter('body')">👀 신체</button>
+    <button class="lvl-btn" data-cat="nature" onclick="changeCategoryFilter('nature')">🌳 자연</button>
+    <button class="lvl-btn" data-cat="vehicles" onclick="changeCategoryFilter('vehicles')">🚗 탈것</button>
+    <button class="lvl-btn" data-cat="household" onclick="changeCategoryFilter('household')">🏠 생활용품</button>
+    <button class="lvl-btn" data-cat="colors" onclick="changeCategoryFilter('colors')">🎨 색깔·모양</button>
+    <button class="lvl-btn" data-cat="numbers" onclick="changeCategoryFilter('numbers')">🔢 숫자</button>
+    <button class="lvl-btn" data-cat="family" onclick="changeCategoryFilter('family')">👪 가족</button>
+    <button class="lvl-btn" data-cat="people" onclick="changeCategoryFilter('people')">👩‍⚕️ 사람(직업)</button>
+    <button class="lvl-btn" data-cat="clothes" onclick="changeCategoryFilter('clothes')">👕 옷</button>
+    <button class="lvl-btn" data-cat="toys" onclick="changeCategoryFilter('toys')">🧸 장난감·놀이</button>
+    <button class="lvl-btn" data-cat="greetings" onclick="changeCategoryFilter('greetings')">👋 인사말·표현</button>
+    <button class="lvl-btn" data-cat="position" onclick="changeCategoryFilter('position')">📍 위치·의문사</button>
+    <button class="lvl-btn" data-cat="season" onclick="changeCategoryFilter('season')">🍂 계절·시간</button>
+    <button class="lvl-btn" data-cat="emotions" onclick="changeCategoryFilter('emotions')">😊 감정</button>
+    <button class="lvl-btn" data-cat="verbs" onclick="changeCategoryFilter('verbs')">🏃 동작</button>
+    <button class="lvl-btn" data-cat="adjectives" onclick="changeCategoryFilter('adjectives')">✨ 성질(형용사)</button>
+    <button class="lvl-btn" data-cat="places" onclick="changeCategoryFilter('places')">🏫 장소</button>
+    <button class="lvl-btn" data-cat="events" onclick="changeCategoryFilter('events')">🎉 행사</button>
+  </div>
+
+  <div class="log-title">오늘 맞춘 단어</div>
+  <div class="log-list" id="logList"></div>
+
+  <div class="gallery-title">단어 카드</div>
+  <div class="gallery-desc">카드를 누르면 발음을 들려주고 한글 뜻을 확인할 수 있어요 · 배경색은 게임에서 틀린 비율을 나타내요 (초록 0~10% · 노랑 10~50% · 분홍 50%↑)</div>
+  <div class="gallery" id="gallery"></div>
+  </div>
+
+<div class="menu-level" id="menuVideosLevel" style="display:none;">
+  <div class="menu-category-header">
+    <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+    <div class="menu-category-title">🎬 히라가나 영상</div>
+    <span style="width:64px;"></span>
+  </div>
+
+  <div class="video-desc">일본 학연(学研) 공식 어린이 채널 「学研キッズTV」의 히라가나 학습 영상 시리즈예요. 순서대로 이어서 재생돼요.</div>
+
+  <div class="video-frame-wrap">
+    <iframe
+      src="https://www.youtube.com/embed/videoseries?list=PLFB38Ov7VG6mj6k7yZaaWSMpNOgN-o--x&cc_load_policy=1&cc_lang_pref=ja&hl=ja"
+      title="ひらがなをおぼえよう - 学研キッズTV"
+      frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </div>
+</div>
+
+</div>
+
+<script src="./data.js"></script>
+<script src="./logic.js"></script>
+
+</body>
+</html>
