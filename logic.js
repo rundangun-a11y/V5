@@ -516,6 +516,8 @@ let hsMaxCombo = 0;
 let hsCorrectCount = 0;
 let hsAnswered = false;
 let hsTimer = null;
+const HS_BASE_TIME_MS = 2000; // 기본(SRS 3단계 기준) 제한 시간
+const HS_MIN_TIME_MS = 1000;  // 아무리 안정된 글자라도 최소한 이 시간은 보장
 let hsAdvanceTimer = null;
 let currentHsQuestion = null;
 
@@ -545,19 +547,58 @@ const HS_WEIGHT_SRS_LEVEL = 5; // 🧠 간격 반복(SRS) 모드 전용 레벨 �
  // 약 30분·12시간·1일·3일·7일·16일·35일·90일
 const SRS_MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/* 🌙 수면 의존 기억 공고화 — 같은 경과 "시간"이라도 그 사이에 잠을 한 번이라도
+   자고 왔는지가 장기 정착 여부를 크게 좌우합니다. 그런데 ms 경과량만 보면
+   "오늘 저녁 11시 50분에 봤다가 자정 10분 뒤에 또 보는 것"과 "낮에 5분 간격으로
+   두 번 보는 것"이 똑같이 취급됩니다. 그래서 ms 차이가 아니라 "달력상 자정을
+   몇 번 넘겼는지"를 별도로 계산합니다(로컬 타임존 기준 날짜). */
+function calendarDayNumber(ts) {
+  const d = new Date(ts);
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / SRS_MS_PER_DAY);
+}
+
+/* 마지막 복습 이후 "달력상 며칠이 지났는지"(자정 경계 기준)를 반환합니다.
+   한 번도 복습한 적 없으면 null */
+function daysSinceLastReviewCalendar(lastReviewAt, now) {
+  if (!lastReviewAt) return null;
+  return calendarDayNumber(now) - calendarDayNumber(lastReviewAt);
+}
+
+/* 하루 안에서 같은 글자를 몇 번까지는 정상적으로 SRS 단계를 올려주되(자연스러운
+   반복 학습), 그 이상 반복하면 "잠을 안 자고 우겨넣는" 것과 같으므로 상승 폭을
+   절반 정도로 낮춥니다 — 자고 온 복습만큼의 가치는 인정하지 않는다는 뜻입니다 */
+const SRS_SAME_DAY_FULL_CREDIT_LIMIT = 3;
+
 /* 🧠 정답/오답 결과를 글자별 SRS 상태(stat)에 반영합니다.
    stat 객체에 srsStage(숙련 단계)와 lastReviewAt(마지막 복습 시각)를 직접 갱신하며,
-   히라가나 카드찾기(hsCharStats)와 히라가나 쓰기(hwCharStats) 양쪽 모두에서 재사용합니다 */
+   히라가나 카드찾기(hsCharStats)와 히라가나 쓰기(hwCharStats) 양쪽 모두에서 재사용합니다.
+   🌙 수면 의존 기억 공고화: 오늘 이미 여러 번(SRS_SAME_DAY_FULL_CREDIT_LIMIT번) 맞혀서
+   단계를 올렸다면, 그 이후로는 한 번 걸러 한 번만 단계를 올립니다(=상승 폭을 절반으로) —
+   실제로 밤을 한 번 자고 온 복습만큼의 안정화 효과는 없다고 보기 때문입니다.
+   달력 날짜가 바뀌면(자정을 넘기면) 오늘 카운트를 자동으로 리셋합니다 */
 function srsUpdateStat(stat, isCorrect) {
   if (typeof stat.srsStage !== 'number') stat.srsStage = 0;
+  const now = Date.now();
+  const today = calendarDayNumber(now);
+  if (stat.lastReviewCalendarDay !== today) {
+    stat.lastReviewCalendarDay = today;
+    stat.sameDayCorrectCount = 0;
+  }
   if (isCorrect) {
-    // 맞혔으면 한 단계 올려 다음 복습 주기를 늘립니다 (최대 7단계, 90일)
-    stat.srsStage = Math.min(stat.srsStage + 1, SRS_STAGE_DAYS.length - 1);
+    stat.sameDayCorrectCount = (stat.sameDayCorrectCount || 0) + 1;
+    const extra = stat.sameDayCorrectCount - SRS_SAME_DAY_FULL_CREDIT_LIMIT;
+    // extra <= 0: 오늘 아직 한도 안 넘음 → 평소처럼 매번 상승
+    // extra > 0: 한도 넘음 → 짝수 번째(2, 4, 6...)만 상승시켜 대략 절반 속도로
+    const shouldRaiseStage = extra <= 0 || extra % 2 === 0;
+    if (shouldRaiseStage) {
+      // 맞혔으면 한 단계 올려 다음 복습 주기를 늘립니다 (최대 7단계, 90일)
+      stat.srsStage = Math.min(stat.srsStage + 1, SRS_STAGE_DAYS.length - 1);
+    }
   } else {
     // 틀렸으면 두 단계 내려 다음 복습이 훨씬 빨리 돌아오게 합니다 (최소 0단계)
     stat.srsStage = Math.max(stat.srsStage - 2, 0);
   }
-  stat.lastReviewAt = Date.now();
+  stat.lastReviewAt = now;
 }
 
 /* 🧠 에빙하우스 망각 곡선 근사식 R = e^(-t/S)를 이용해 "지금 이 글자를 잊어버렸을 확률"을
@@ -601,6 +642,14 @@ function srsWeightedPick(list, statsObj, count) {
   return result;
 }
 
+/* ⏱️ 난이도(시간 제한) 조절 — 이 글자의 SRS 단계에 맞는 시간 제한(ms)을 계산합니다.
+   baseMs(원래 기본 시간)에 단계별 배수(SRS_TIME_MULTIPLIER)를 곱하고, 게임을 아예
+   플레이할 수 없어지지 않도록 minMs 밑으로는 내려가지 않게 막습니다 */
+function stageAdjustedTimeMs(baseMs, stage, minMs) {
+  const mult = SRS_TIME_MULTIPLIER[stage] !== undefined ? SRS_TIME_MULTIPLIER[stage] : 1;
+  return Math.max(minMs, Math.round(baseMs * mult));
+}
+
 /* 🧠 장기기억 현황판 — 카드찾기(hs, 재인)·쓰기(hw, 회상)·읽기(hr, 발화) 세 게임의
    SRS 통계(srsStage/lastReviewAt)를 종합해 글자 하나하나가 "지금 장기기억에 얼마나
    잘 저장돼 있는지"를 하나의 등급으로 판정합니다.
@@ -616,7 +665,7 @@ function computeLtmStatus(ch) {
     const attempted = (stat.correct + stat.wrong) > 0;
     const retention = attempted ? (1 - srsForgetProbability(stat, now)) : null;
     const stage = typeof stat.srsStage === 'number' ? stat.srsStage : 0;
-    return { name, weight, attempted, retention, stage, correct: stat.correct, wrong: stat.wrong, lastReviewAt: stat.lastReviewAt };
+    return { name, weight, attempted, retention, stage, correct: stat.correct, wrong: stat.wrong, timeouts: stat.timeouts || 0, lastReviewAt: stat.lastReviewAt };
   }
 
   const channels = [
@@ -654,6 +703,8 @@ function renderLtmDashboard() {
   hsStats.load();
   hwStats.load();
   hrStats.load();
+
+  renderActiveSetPanel();
 
   const grid = document.getElementById('ltmStatGrid');
   if (!grid) return;
@@ -710,10 +761,402 @@ function renderLtmDashboard() {
   if (progressEl) progressEl.textContent = counts.progress;
   if (reviewEl) reviewEl.textContent = counts.review;
   if (noneEl) noneEl.textContent = counts.none;
+
+  const descEl = document.getElementById('ltmReviewDesc');
+  if (descEl) {
+    if (counts.review > 0) {
+      descEl.textContent = `🔴 복습이 필요한 글자 ${counts.review}개 · 카드찾기·쓰기·읽기를 랜덤으로 섞어 복습해요`;
+    } else if (counts.progress > 0) {
+      descEl.textContent = `복습이 급한 글자는 없어요! 학습 중인 글자 ${counts.progress}개로 대신 다져볼까요?`;
+    } else {
+      descEl.textContent = '지금은 복습할 글자가 없어요 🎉';
+    }
+  }
+}
+
+/* 🔁 복습 세트 — 장기기억에 도움되는 회상형 게임(카드찾기·쓰기·읽기)을 랜덤 순서로
+   섞어서, '복습 필요' 등급 글자만 골라 반복 학습시킵니다.
+   - 복습이 급한 글자가 없으면 '학습 중' 글자로 대신 세트를 만듭니다.
+   - 한 세트는 카드찾기/쓰기/읽기 3게임을 순서만 랜덤으로 섞어 한 번씩 진행합니다.
+   - 각 게임이 끝나면(결과 화면) 잠시 뒤 자동으로 다음 게임으로 넘어갑니다 */
+let reviewSessionActive = false;
+let reviewSessionChars = [];
+let reviewSessionGameQueue = [];
+let reviewSessionRoundIndex = 0;
+const REVIEW_GAME_TYPES = ['hiraganaSpeed', 'hiraganaWrite', 'hiraganaRead'];
+const REVIEW_SESSION_ROUNDS = REVIEW_GAME_TYPES.length;
+
+function getReviewCandidateChars() {
+  const allChars = HIRAGANA_LIST.map(item => item.ch);
+  const reviewChars = allChars.filter(ch => computeLtmStatus(ch).level === 'review');
+  if (reviewChars.length > 0) return reviewChars;
+  // 복습이 급한 글자가 없으면 '학습 중' 글자까지 포함해서 세트를 만듭니다
+  return allChars.filter(ch => {
+    const lvl = computeLtmStatus(ch).level;
+    return lvl === 'review' || lvl === 'progress';
+  });
+}
+
+function buildReviewGameQueue(rounds) {
+  const queue = [];
+  while (queue.length < rounds) {
+    queue.push(...REVIEW_GAME_TYPES.slice().sort(() => Math.random() - 0.5));
+  }
+  return queue.slice(0, rounds);
+}
+
+function startReviewSession() {
+  hsStats.load();
+  hwStats.load();
+  hrStats.load();
+
+  const chars = getReviewCandidateChars();
+  if (chars.length === 0) {
+    alert('지금은 복습이 필요한 글자가 없어요! 정말 잘하고 있어요 🎉');
+    return;
+  }
+
+  reviewSessionChars = chars;
+  reviewSessionGameQueue = buildReviewGameQueue(REVIEW_SESSION_ROUNDS);
+  reviewSessionRoundIndex = 0;
+  reviewSessionActive = true;
+  playNextReviewRound();
+}
+
+function playNextReviewRound() {
+  if (reviewSessionRoundIndex >= reviewSessionGameQueue.length) {
+    finishReviewSession();
+    return;
+  }
+  const gameType = reviewSessionGameQueue[reviewSessionRoundIndex];
+  reviewSessionRoundIndex += 1;
+  updateReviewSessionBanner();
+
+  launchGame(gameType);
+  // 시작 화면을 거치지 않고, 복습 대상 글자만으로 바로 게임을 시작합니다
+  if (gameType === 'hiraganaSpeed') startHiraganaSpeedGame();
+  else if (gameType === 'hiraganaWrite') startHiraganaWriteGame();
+  else if (gameType === 'hiraganaRead') startHiraganaReadGame();
+}
+
+/* 게임 결과 화면이 뜬 뒤, 복습 세트 진행 중이라면 잠시 보여준 다음 자동으로 다음 게임으로 넘어갑니다 */
+function scheduleNextReviewRound() {
+  if (!reviewSessionActive) return;
+  setTimeout(() => { playNextReviewRound(); }, 2200);
+}
+
+function finishReviewSession() {
+  reviewSessionActive = false;
+  updateReviewSessionBanner();
+  alert('복습 세트를 모두 마쳤어요! 🎉 장기기억 현황에서 얼마나 좋아졌는지 확인해보세요.');
+  exitGameFullscreen();
+  showTopMenu();
+  openMenuPanel('menuLtmLevel');
+  renderLtmDashboard();
+}
+
+/* "이전 메뉴"로 중간에 나가는 등, 세트를 끝까지 마치지 않고 멈출 때 호출됩니다 */
+function cancelReviewSession() {
+  if (!reviewSessionActive) return;
+  reviewSessionActive = false;
+  reviewSessionChars = [];
+  reviewSessionGameQueue = [];
+  reviewSessionRoundIndex = 0;
+  updateReviewSessionBanner();
+}
+
+function updateReviewSessionBanner() {
+  const banner = document.getElementById('reviewSessionBanner');
+  if (!banner) return;
+  if (!reviewSessionActive) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  const total = reviewSessionGameQueue.length;
+  const current = Math.min(reviewSessionRoundIndex, total);
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <span>🔁 복습 세트 ${current}/${total} 진행 중</span>
+    <button class="review-session-cancel-btn" onclick="cancelReviewSession()">그만하기</button>
+  `;
+}
+
+/* 🎯 활성 학습 세트 컨트롤러 — 한 번에 학습 대상으로 올려두는 글자 수(활성 세트 크기)를
+   전체 46자 중 일부만으로 시작해서, 최근 학습 반응(정확도·시간초과율·SRS 안정도)을 보고
+   자동으로 늘리거나 보류합니다. 카드찾기/쓰기/읽기의 문제 출제 풀은 이 활성 세트 안에서만
+   뽑히고(복습 세트는 예외), 장기기억 현황판의 46자 그리드 자체는 그대로 전체를 보여줍니다.
+   확장 기준(필요 정확도/허용 시간초과율)도 고정값이 아니라, 방금 늘린 세트가 순조로웠는지/
+   버거웠는지에 따라 strictness 값으로 조금씩 더 엄격해지거나 느슨해집니다 */
+const ACTIVE_SET_STATE_KEY = 'kotobaActiveSetState';
+const ACTIVE_SET_DEFAULT_SIZE = 5;
+const ACTIVE_SET_LOG_MAX = 40;
+const ACTIVE_SET_EVENT_LOG_MAX = 20;
+const ACTIVE_SET_MIN_STRICTNESS = 0.8;
+const ACTIVE_SET_MAX_STRICTNESS = 1.3;
+const ACTIVE_SET_BASE_ACCURACY_THRESHOLD = 0.85;
+const ACTIVE_SET_BASE_TIMEOUT_THRESHOLD = 0.15;
+
+let activeSetState = null;
+
+function loadActiveSetStateIfNeeded() {
+  if (activeSetState) return;
+  try {
+    const raw = localStorage.getItem(ACTIVE_SET_STATE_KEY);
+    activeSetState = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    activeSetState = null;
+  }
+  if (!activeSetState || typeof activeSetState !== 'object') {
+    activeSetState = { size: ACTIVE_SET_DEFAULT_SIZE, strictness: 1.0, log: [], events: [], pendingCheck: false };
+  }
+  if (typeof activeSetState.size !== 'number') activeSetState.size = ACTIVE_SET_DEFAULT_SIZE;
+  if (typeof activeSetState.strictness !== 'number') activeSetState.strictness = 1.0;
+  if (!Array.isArray(activeSetState.log)) activeSetState.log = [];
+  if (!Array.isArray(activeSetState.events)) activeSetState.events = [];
+  if (typeof activeSetState.pendingCheck !== 'boolean') activeSetState.pendingCheck = false;
+}
+
+function saveActiveSetState() {
+  try {
+    localStorage.setItem(ACTIVE_SET_STATE_KEY, JSON.stringify(activeSetState));
+  } catch (e) {
+    /* 저장 실패해도 게임 진행에는 지장 없음 */
+  }
+}
+
+/* 🧩 청킹(Chunking) — activeSetState.size는 계속 "글자 개수" 단위로 증감하지만, 실제로
+   화면에 보여주고 문제를 뽑는 범위는 항상 행(あ행/か행/…) 경계에 맞춰 올림 처리합니다.
+   예: size가 7이면 あ행(5자) + か행 앞 2자에서 끊기는 게 아니라, か행 전체까지 포함한
+   10자로 반올림해서 "행 중간에서 잘린 세트"가 되지 않도록 합니다. 이미 진행 중이던
+   사용자(localStorage에 저장된 size가 행 경계와 안 맞는 경우)도 강제 초기화 없이
+   자동으로 다음 행 경계까지 흡수됩니다 */
+function roundSizeUpToRowBoundary(size) {
+  if (typeof HIRAGANA_ROW_GROUPS === 'undefined' || !HIRAGANA_ROW_GROUPS.length) return size;
+  for (const group of HIRAGANA_ROW_GROUPS) {
+    if (size <= group.endIndex) return group.endIndex;
+  }
+  return HIRAGANA_LIST.length;
+}
+
+/* 주어진(반올림된) size가 지금 어느 행까지 포함하고 있는지 반환합니다 (UI 표시용) */
+function getCurrentRowGroupInfo(size) {
+  if (typeof HIRAGANA_ROW_GROUPS === 'undefined' || !HIRAGANA_ROW_GROUPS.length) return null;
+  let current = null;
+  for (const group of HIRAGANA_ROW_GROUPS) {
+    if (size >= group.startIndex + 1) current = group;
+    else break;
+  }
+  return current;
+}
+
+/* 지금 학습 대상인 글자 목록(오십음도 순서 앞에서부터, 행 경계까지 올림한 개수만큼) */
+function getActiveCharList() {
+  loadActiveSetStateIfNeeded();
+  const roundedSize = roundSizeUpToRowBoundary(activeSetState.size);
+  const size = Math.min(roundedSize, HIRAGANA_LIST.length);
+  return HIRAGANA_LIST.slice(0, size);
+}
+
+function logActiveSetEvent(text) {
+  loadActiveSetStateIfNeeded();
+  activeSetState.events.push({ text, ts: Date.now() });
+  if (activeSetState.events.length > ACTIVE_SET_EVENT_LOG_MAX) {
+    activeSetState.events = activeSetState.events.slice(-ACTIVE_SET_EVENT_LOG_MAX);
+  }
+  saveActiveSetState();
+}
+
+/* 카드찾기/쓰기/읽기에서 정답·오답·시간초과가 나올 때마다 호출됩니다.
+   "지금 활성 세트 안"의 글자에 대한 시도만 커리큘럼 확장 판단 재료로 씁니다 —
+   이미 안정된 옛 글자를 복습하다 튀어나온 오답 때문에 확장이 잘못 보류되지 않도록 합니다 */
+function recordActiveSetAttempt(ch, isCorrect, isTimeout) {
+  loadActiveSetStateIfNeeded();
+  const activeChars = getActiveCharList().map(item => item.ch);
+  if (!activeChars.includes(ch)) return;
+  activeSetState.log.push({ correct: isCorrect, timeout: !!isTimeout, ts: Date.now() });
+  if (activeSetState.log.length > ACTIVE_SET_LOG_MAX) {
+    activeSetState.log = activeSetState.log.slice(-ACTIVE_SET_LOG_MAX);
+  }
+  saveActiveSetState();
+}
+
+/* 게임 한 판(10문제)이 끝날 때마다 호출됩니다. 최근 로그를 보고 활성 세트를 늘릴지/보류할지
+   판단하고, 확장 기준(strictness)도 방금 확장이 순조로웠는지에 따라 함께 조정합니다 */
+function evaluateActiveSetExpansion() {
+  loadActiveSetStateIfNeeded();
+  if (activeSetState.size >= HIRAGANA_LIST.length) return; // 이미 46자 전부 활성화됨
+
+  const log = activeSetState.log;
+
+  // 방금 확장한 직후라면, 그 확장이 순조로웠는지 먼저 점검해서 확장 기준(strictness)을 조정합니다
+  if (activeSetState.pendingCheck && log.length >= 12) {
+    const checkWindow = log.slice(0, 15);
+    const checkAccuracy = checkWindow.filter(r => r.correct).length / checkWindow.length;
+    if (checkAccuracy < 0.55) {
+      activeSetState.strictness = Math.min(ACTIVE_SET_MAX_STRICTNESS, activeSetState.strictness + 0.15);
+      logActiveSetEvent('🔧 방금 늘린 글자들이 조금 버거웠어요 — 다음부터는 더 신중하게 늘릴게요');
+    } else if (checkAccuracy >= 0.9) {
+      activeSetState.strictness = Math.max(ACTIVE_SET_MIN_STRICTNESS, activeSetState.strictness - 0.1);
+      logActiveSetEvent('🔧 순조롭게 잘 따라오고 있어요 — 다음부터는 조금 더 빠르게 늘릴게요');
+    }
+    activeSetState.pendingCheck = false;
+    saveActiveSetState();
+  }
+
+  if (log.length < 10) return; // 판단하기엔 데이터가 아직 부족함
+
+  const recent = log.slice(-20);
+  const accuracy = recent.filter(r => r.correct).length / recent.length;
+  const timeoutRate = recent.filter(r => r.timeout).length / recent.length;
+
+  const activeChars = getActiveCharList().map(item => item.ch);
+  // 회상(직접 산출)인 쓰기(hw) 기준이 가장 엄격한 증거라서 확장 판단은 이 기준으로 합니다
+  const stages = activeChars.map(ch => hwStats.getStat(ch).srsStage);
+  const avgStage = stages.reduce((a, b) => a + b, 0) / stages.length;
+  const minStage = Math.min(...stages);
+
+  const accuracyThreshold = ACTIVE_SET_BASE_ACCURACY_THRESHOLD * activeSetState.strictness;
+  const timeoutThreshold = ACTIVE_SET_BASE_TIMEOUT_THRESHOLD / activeSetState.strictness;
+
+  const readyToExpand = avgStage >= 2 && minStage >= 1 && accuracy >= accuracyThreshold && timeoutRate <= timeoutThreshold;
+  const struggling = accuracy < 0.6 || timeoutRate >= 0.35;
+
+  if (readyToExpand) {
+    let increment = 2;
+    if (accuracy >= 0.95 && timeoutRate <= 0.05) increment = 5;
+    else if (accuracy >= 0.9) increment = 3;
+    // strictness가 높을수록(최근에 버거웠던 이력이 있을수록) 한 번에 늘리는 양도 보수적으로 줄입니다
+    increment = Math.max(1, Math.round(increment / activeSetState.strictness));
+
+    const before = activeSetState.size;
+    activeSetState.size = Math.min(activeSetState.size + increment, HIRAGANA_LIST.length);
+    activeSetState.log = [];
+    activeSetState.pendingCheck = true;
+    saveActiveSetState();
+
+    // 청킹: 로그 메시지도 "글자 수"가 아니라 실제로 노출되는 행 경계 기준 크기로 보여줍니다
+    const roundedBefore = roundSizeUpToRowBoundary(before);
+    const roundedAfter = roundSizeUpToRowBoundary(activeSetState.size);
+    const rowInfo = getCurrentRowGroupInfo(roundedAfter);
+    const rowText = rowInfo ? ` (${rowInfo.name} 완료)` : '';
+    if (roundedAfter > roundedBefore) {
+      logActiveSetEvent(`✅ 활성 글자 ${roundedBefore}자 → ${roundedAfter}자로 확장${rowText} (정답률 ${Math.round(accuracy * 100)}%, 시간초과 ${Math.round(timeoutRate * 100)}%)`);
+    } else {
+      logActiveSetEvent(`📈 다음 행까지 조금 더 가까워졌어요 (정답률 ${Math.round(accuracy * 100)}%, 시간초과 ${Math.round(timeoutRate * 100)}%)`);
+    }
+  } else if (struggling) {
+    logActiveSetEvent(`⏸️ 확장 보류 — 정답률 ${Math.round(accuracy * 100)}%, 시간초과 ${Math.round(timeoutRate * 100)}% (지금 글자에 더 집중해요)`);
+  }
+}
+
+/* "장기기억 현황" 패널 상단의 활성 세트 진행 카드를 갱신합니다 */
+function renderActiveSetPanel() {
+  loadActiveSetStateIfNeeded();
+  const countEl = document.getElementById('ltmActiveSetCount');
+  if (!countEl) return;
+
+  const total = HIRAGANA_LIST.length;
+  const size = Math.min(roundSizeUpToRowBoundary(activeSetState.size), total);
+  countEl.textContent = `${size} / ${total}자`;
+
+  const barFillEl = document.getElementById('ltmActiveSetBarFill');
+  if (barFillEl) barFillEl.style.width = Math.round((size / total) * 100) + '%';
+
+  const charsEl = document.getElementById('ltmActiveSetChars');
+  if (charsEl) {
+    charsEl.innerHTML = getActiveCharList().map(item => `<span class="ltm-activeset-ch">${item.ch}</span>`).join('');
+  }
+
+  // 청킹: 지금 어느 행(あ행/か행/…)까지 학습 중인지 함께 보여줍니다
+  const rangeEl = document.getElementById('ltmActiveSetRange');
+  if (rangeEl) {
+    const rowInfo = getCurrentRowGroupInfo(size);
+    if (size >= total) {
+      rangeEl.textContent = '오십음도 전체를 학습하고 있어요';
+    } else if (rowInfo) {
+      rangeEl.textContent = `${rowInfo.name}까지 학습 중이에요 (행 단위로 묶어서 배워요)`;
+    } else {
+      rangeEl.textContent = '';
+    }
+  }
+
+  const logEl = document.getElementById('ltmActiveSetLog');
+  if (logEl) {
+    const events = activeSetState.events.slice(-6).reverse();
+    logEl.innerHTML = events.length > 0
+      ? events.map(e => `<div class="ltm-activeset-log-row">${e.text}</div>`).join('')
+      : '<div class="ltm-activeset-log-row">아직 기록이 없어요 — 게임을 몇 판 하면 자동으로 조절이 시작돼요</div>';
+  }
+}
+
+/* 활성 세트를 처음(기본 5자)부터 다시 늘려가도록 되돌립니다. 글자별 정답/오답 기록 자체는 지우지 않습니다 */
+function resetActiveSetProgress() {
+  const confirmed = confirm('지금 배우는 글자 범위를 처음(5자)부터 다시 늘려가도록 되돌릴까요?\n(이미 쌓인 글자별 정답/오답 기록 자체는 지워지지 않아요)');
+  if (!confirmed) return;
+  activeSetState = { size: ACTIVE_SET_DEFAULT_SIZE, strictness: 1.0, log: [], events: [], pendingCheck: false };
+  saveActiveSetState();
+  renderActiveSetPanel();
 }
 
 /* 그리드의 글자 칸을 누르면 게임별(카드찾기/쓰기/읽기) 정답·오답 횟수, 유지율(%),
    마지막 복습 시점을 자세히 보여줍니다 */
+/* 🧠 메타인지 — 이 글자에 대해 지금까지 남긴 "확실해요/헷갈려요" 예측과 실제 정답 여부를
+   비교해 요약합니다. 자기판단 기록이 하나도 없으면 null을 반환해서 상세보기에서 해당
+   섹션을 아예 표시하지 않게 합니다 (쓰기 게임의 회상 검증에서만 기록됨) */
+function computeSelfJudgmentSummary(ch) {
+  const stat = hwStats.getStat(ch);
+  const judgments = Array.isArray(stat.selfJudgments) ? stat.selfJudgments : [];
+  if (judgments.length === 0) return null;
+  const confident = judgments.filter(j => j.predicted === 'confident');
+  const unsure = judgments.filter(j => j.predicted === 'unsure');
+  return {
+    confidentCount: confident.length,
+    confidentWrong: confident.filter(j => !j.wasCorrect).length,
+    unsureCount: unsure.length,
+    unsureCorrect: unsure.filter(j => j.wasCorrect).length
+  };
+}
+
+/* 🔤 처리 수준 이론 — 이 글자로 시작하는 대표 단어를 상세보기 하단에 보여줘서
+   글자를 "모양-발음"만이 아니라 "뜻"까지 함께 만나게 합니다(깊은 처리 유도).
+   해당 글자에 등록된 단어가 없으면(예: を, ん) 안내 문구(note)만 보여줍니다.
+   HIRAGANA_SAMPLE_WORDS에 아예 데이터가 없는 글자(탁음/요음 등)는 섹션 자체를 생략합니다 */
+function renderHiraganaSampleWordsHtml(ch) {
+  const entry = HIRAGANA_SAMPLE_WORDS[ch];
+  if (!entry) return '';
+  if (Array.isArray(entry.words) && entry.words.length > 0) {
+    const chips = entry.words.map(w => `<span class="ltm-detail-word-chip"><b>${w.jp}</b> · ${w.kr}</span>`).join('');
+    return `
+    <div class="ltm-detail-words">
+      <div class="ltm-detail-words-title">🔤 이 글자로 시작하는 단어</div>
+      <div class="ltm-detail-word-list">${chips}</div>
+    </div>`;
+  }
+  if (entry.note) {
+    return `
+    <div class="ltm-detail-words">
+      <div class="ltm-detail-words-title">🔤 이 글자로 시작하는 단어</div>
+      <div class="ltm-detail-words-note">${entry.note}</div>
+    </div>`;
+  }
+  return '';
+}
+
+/* 🌙 수면 의존 기억 공고화 — 오늘 이미 한도(SRS_SAME_DAY_FULL_CREDIT_LIMIT)를 넘겨서
+   반복한 채널이 있으면, "더 풀어도 상승 폭이 절반으로 줄어든다"는 걸 부드럽게 안내합니다.
+   해당 사항이 없으면 빈 문자열(섹션 생략) */
+function computeSleepConsolidationNote(ch) {
+  const today = calendarDayNumber(Date.now());
+  const engines = [hsStats, hwStats, hrStats];
+  const cappedToday = engines.some(engine => {
+    const stat = engine.getStat(ch);
+    return stat.lastReviewCalendarDay === today && stat.sameDayCorrectCount > SRS_SAME_DAY_FULL_CREDIT_LIMIT;
+  });
+  if (!cappedToday) return '';
+  return `<div class="ltm-detail-row ltm-detail-sleep">🌙 오늘 이미 여러 번 복습했어요 — 지금부터는 하루 자고 다시 만나야 더 오래 기억에 남아요</div>`;
+}
+
 function showLtmDetail(ch, status) {
   const box = document.getElementById('ltmDetailBox');
   if (!box) return;
@@ -726,8 +1169,32 @@ function showLtmDetail(ch, status) {
     const pct = Math.round(c.retention * 100);
     const daysAgo = c.lastReviewAt ? Math.floor((now - c.lastReviewAt) / SRS_MS_PER_DAY) : null;
     const agoText = daysAgo === null ? '' : (daysAgo <= 0 ? ' · 오늘 복습' : ` · ${daysAgo}일 전 복습`);
-    return `<div class="ltm-detail-row"><b>${c.name}</b><span>정답 ${c.correct} · 오답 ${c.wrong} · 유지율 약 ${pct}%${agoText}</span></div>`;
+    const timeoutText = c.timeouts > 0 ? `(시간초과 ${c.timeouts})` : '';
+    return `<div class="ltm-detail-row"><b>${c.name}</b><span>정답 ${c.correct} · 오답 ${c.wrong}${timeoutText} · 유지율 약 ${pct}%${agoText}</span></div>`;
   }).join('');
+
+  // 🧠 메타인지 — 이 글자에 대한 자기판단 예측 정확도(기록이 있을 때만 표시)
+  const judgmentSummary = computeSelfJudgmentSummary(ch);
+  let judgmentHtml = '';
+  if (judgmentSummary) {
+    const parts = [];
+    if (judgmentSummary.confidentCount > 0) {
+      parts.push(judgmentSummary.confidentWrong > 0
+        ? `😎 확실하다고 한 ${judgmentSummary.confidentCount}번 중 ${judgmentSummary.confidentWrong}번 틀렸어요 — 과신 주의!`
+        : `😎 확실하다고 한 ${judgmentSummary.confidentCount}번 모두 맞혔어요`);
+    }
+    if (judgmentSummary.unsureCount > 0) {
+      const pct = Math.round((judgmentSummary.unsureCorrect / judgmentSummary.unsureCount) * 100);
+      parts.push(`🤔 헷갈린다고 한 ${judgmentSummary.unsureCount}번 중 실제로 맞힌 비율 ${pct}%`);
+    }
+    judgmentHtml = `<div class="ltm-detail-row ltm-detail-judgment"><b>🧠 자기 예측 vs 실제</b><span>${parts.join(' · ')}</span></div>`;
+  }
+
+  // 🔤 처리 수준 — 이 글자로 시작하는 대표 단어(있을 때만)
+  const sampleWordsHtml = renderHiraganaSampleWordsHtml(ch);
+
+  // 🌙 수면 의존 기억 공고화 — 오늘 이미 여러 번 반복했다면 안내(해당 없으면 빈 문자열)
+  const sleepNoteHtml = computeSleepConsolidationNote(ch);
 
   box.innerHTML = `
     <div class="ltm-detail-header">
@@ -736,6 +1203,9 @@ function showLtmDetail(ch, status) {
       <button class="ltm-detail-close" onclick="closeLtmDetail()">✕</button>
     </div>
     ${rowsHtml}
+    ${judgmentHtml}
+    ${sampleWordsHtml}
+    ${sleepNoteHtml}
   `;
   box.style.display = 'block';
 }
@@ -762,7 +1232,8 @@ let hwLocked = false; // 문제당 한 번만 쓰도록(잠금) 처리하는 플
 let hwTimer = null;
 let hwAdvanceTimer = null;
 let currentHwQuestion = null;
-const HW_TIME_LIMIT = 5000; // 문제당 5초
+const HW_TIME_LIMIT = 5000; // 기본(SRS 3단계 기준) 제한 시간 5초
+const HW_MIN_TIME_MS = 3000; // 아무리 안정된 글자라도 실제로 쓸 시간은 보장
 
 /* 🖊️ 히라가나 쓰기 캔버스 상태 (히라가나 스피드게임의 카드 선택과 달리, 실제로 손으로 그려서 판정합니다) */
 const HW_CELL = 8;
@@ -802,8 +1273,11 @@ let hrAttemptTimer = null; // 시도당 인식 제한 타이머
 let hrRetryTimer = null;   // 1차 실패 후 2차 시도까지 대기하는 타이머
 let hrAdvanceTimer = null;
 let currentHrQuestion = null;
-const HR_ATTEMPT_TIME_LIMIT = 4500; // 한 번의 시도당 4.5초 (음성 인식 서버 왕복 시간을 고려해 2초에서 늘림)
+const HR_ATTEMPT_TIME_LIMIT = 4500; // 기본(SRS 3단계 기준) 시도당 제한 시간 (음성 인식 서버 왕복 시간을 고려해 2초에서 늘림)
+const HR_MIN_TIME_MS = 3000; // 인식 서버 왕복 시간을 감안해 이보다 짧게는 줄이지 않음
 const HR_RETRY_DELAY = 2000; // 1차 실패 후 2차 시도까지 대기 시간
+let hrCurrentTimeLimit = HR_ATTEMPT_TIME_LIMIT; // 이번 문제의 SRS 단계로 조정된 실제 제한 시간
+let hrAnyTimeoutThisQuestion = false; // 이번 문제에서 시도 중 시간초과가 있었는지(오답과 구분用)
 
 /* 🎤 히라가나 읽기 게임 - 글자별 성공/실패 누적 통계 및 출제 가중치.
    히라가나 쓰기(HW_STATS_KEY)와는 별도의 키에 저장되어 서로 통계가 섞이지 않습니다 */
@@ -1421,20 +1895,26 @@ function toggleKoreanDisplay(checked){
   if(emojiKrToggle) emojiKrToggle.disabled = !checked;
 }
 
-function speakTTS(text) {
+function speakTTS(text, opts) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
 
+  opts = opts || {};
   const rate = babyTalkMode ? 0.6 : 0.85;
   const pitch = babyTalkMode ? 1.35 : 1.0;
+  // 🔊 부호화 다양성(Encoding Variability): 같은 글자를 매번 똑같은 속도/음높이로만 들으면
+  // 그 특정 목소리 패턴에 종속된 얕은 청각 기억이 형성될 수 있어요. opts.jitter가 켜지면
+  // 속도/음높이를 매번 아주 살짝(±5%) 무작위로 흔들어 조금씩 다른 소리로 들려줍니다.
+  const jitterRate = opts.jitter ? rate * (0.95 + Math.random() * 0.1) : rate;
+  const jitterPitch = opts.jitter ? pitch * (0.95 + Math.random() * 0.1) : pitch;
   const repeatCount = babyTalkMode ? 2 : 1;
   let playedCount = 0;
 
   function playOnce(){
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ja-JP';
-    utterance.rate = rate;
-    utterance.pitch = pitch;
+    utterance.rate = jitterRate;
+    utterance.pitch = jitterPitch;
     playedCount++;
     if(playedCount < repeatCount){
       utterance.onend = () => { setTimeout(playOnce, 450); };
@@ -4644,6 +5124,12 @@ function dtShowResult() {
    세 게임은 저장 키(statsKey/weightKey)와 DOM id 접두사(prefix), 초기화 확인 문구만 다르고
    나머지 동작은 완전히 동일해서, 이 팩토리로 게임별 인스턴스를 만들어 재사용합니다.
    id 규칙: #{prefix}StatGrid, #{prefix}WeightRow, #{prefix}WeightBtn{level}, #{prefix}SrsNote */
+/* 🧠 메타인지/학습판단 보정(Metacognition, Judgment of Learning) — 답하기 전 스스로
+   "확실해요/헷갈려요"를 예측하게 하고, 실제 정답 여부와 비교해 과신(overconfidence)을
+   교정하거나 자기주도적 복습 우선순위를 세울 수 있게 돕습니다. 글자당 최근 기록만 남기고
+   너무 오래된 예측은 잘라내서 저장 용량이 무한정 커지지 않게 합니다 */
+const SELF_JUDGMENT_LOG_MAX = 30;
+
 function createHiraganaStatsEngine(cfg) {
   let charStats = {};
   let weightLevel = cfg.defaultWeightLevel;
@@ -4674,10 +5160,14 @@ function createHiraganaStatsEngine(cfg) {
   }
 
   function getStat(ch) {
-    if (!charStats[ch]) charStats[ch] = { correct: 0, wrong: 0, srsStage: 0, lastReviewAt: null };
-    // 기존에 저장된 통계(구버전 데이터)에는 SRS 필드가 없을 수 있으므로 없으면 채워줍니다
+    if (!charStats[ch]) charStats[ch] = { correct: 0, wrong: 0, srsStage: 0, lastReviewAt: null, timeouts: 0, selfJudgments: [], sameDayCorrectCount: 0, lastReviewCalendarDay: null };
+    // 기존에 저장된 통계(구버전 데이터)에는 SRS/시간초과/자기판단/수면공고화 필드가 없을 수 있으므로 없으면 채워줍니다
     if (typeof charStats[ch].srsStage !== 'number') charStats[ch].srsStage = 0;
     if (charStats[ch].lastReviewAt === undefined) charStats[ch].lastReviewAt = null;
+    if (typeof charStats[ch].timeouts !== 'number') charStats[ch].timeouts = 0;
+    if (!Array.isArray(charStats[ch].selfJudgments)) charStats[ch].selfJudgments = [];
+    if (typeof charStats[ch].sameDayCorrectCount !== 'number') charStats[ch].sameDayCorrectCount = 0;
+    if (charStats[ch].lastReviewCalendarDay === undefined) charStats[ch].lastReviewCalendarDay = null;
     return charStats[ch];
   }
 
@@ -4713,10 +5203,13 @@ function createHiraganaStatsEngine(cfg) {
   }
 
   /* 오답/시간초과: 오답 횟수를 amount만큼 올림 (기본 1) + SRS 단계를 2단계 낮춰
-     해당 글자의 다음 복습 시점을 앞당깁니다 */
-  function recordMistake(ch, amount = 1) {
+     해당 글자의 다음 복습 시점을 앞당깁니다.
+     isTimeout=true면 "몰라서 오답"이 아니라 "시간 안에 답을 못한 것"이라는 뜻으로
+     timeouts 카운트도 별도로 남깁니다(정확도와 속도/유창성을 구분해서 기록) */
+  function recordMistake(ch, amount = 1, isTimeout = false) {
     const stat = getStat(ch);
     stat.wrong += amount;
+    if (isTimeout) stat.timeouts += amount;
     srsUpdateStat(stat, false);
     save();
   }
@@ -4730,6 +5223,17 @@ function createHiraganaStatsEngine(cfg) {
     save();
   }
 
+  /* 답하기 전 스스로 예측한 "확실해요(confident)/헷갈려요(unsure)"와, 실제로 맞혔는지(wasCorrect)를
+     짝지어 기록합니다. 과신(확실하다고 했는데 틀림) 여부를 나중에 장기기억 상세보기에서 계산하는 데 씁니다 */
+  function recordSelfJudgment(ch, predicted, wasCorrect) {
+    const stat = getStat(ch);
+    stat.selfJudgments.push({ predicted, wasCorrect, ts: Date.now() });
+    if (stat.selfJudgments.length > SELF_JUDGMENT_LOG_MAX) {
+      stat.selfJudgments = stat.selfJudgments.slice(-SELF_JUDGMENT_LOG_MAX);
+    }
+    save();
+  }
+
   /* 오답 횟수를 반영해 중복 없이 count개를 뽑는 가중 무작위 샘플링.
      기본 가중치 1에 (누적 오답 횟수 × 선택한 배수)를 더해서, 예전에 많이 틀렸던 글자일수록
      같은 세트 안에서도 더 높은 확률로 뽑히게 합니다. 배수는 시작 화면에서 사용자가 고른
@@ -4740,16 +5244,21 @@ function createHiraganaStatsEngine(cfg) {
      '🧠 SRS 복습'(레벨 5)을 고르면 오답 횟수 누적치 대신, 글자별 SRS 단계와 마지막 복습
      시각을 바탕으로 계산한 "지금 잊어버렸을 확률"에 따라 뽑습니다(srsWeightedPick 참고) */
   function weightedPick(count) {
+    // 🎯 문제 출제는 "지금 활성 세트로 학습 중인 글자"들 안에서만 뽑습니다.
+    // 전체 46자를 한꺼번에 다 대상으로 두면 반복 노출 간격이 벌어져 장기기억화에 불리하므로,
+    // 활성 세트 컨트롤러가 늘려준 만큼만 사용합니다
+    const activeList = getActiveCharList();
+
     if (weightLevel === HS_WEIGHT_SRS_LEVEL) {
-      return srsWeightedPick(HIRAGANA_LIST, charStats, count);
+      return srsWeightedPick(activeList, charStats, count);
     }
     if (weightLevel === HS_WEIGHT_ONLY_WRONG_LEVEL) {
-      const onlyWrongList = HIRAGANA_LIST.filter(item => {
+      const onlyWrongList = activeList.filter(item => {
         const stat = charStats[item.ch] || { correct: 0, wrong: 0 };
         const total = stat.correct + stat.wrong;
         return total > 0 && (stat.wrong / total) >= 0.30;
       });
-      const sourceList = onlyWrongList.length > 0 ? onlyWrongList : HIRAGANA_LIST;
+      const sourceList = onlyWrongList.length > 0 ? onlyWrongList : activeList;
       const shuffled = sourceList.slice().sort(() => Math.random() - 0.5);
       // 뽑을 개수가 대상 글자 수보다 많으면 부족한 만큼 다시 섞어서 채웁니다 (중복 출제 허용)
       const result = [];
@@ -4763,7 +5272,7 @@ function createHiraganaStatsEngine(cfg) {
     }
 
     const multiplier = HS_WEIGHT_MULTIPLIERS[weightLevel] !== undefined ? HS_WEIGHT_MULTIPLIERS[weightLevel] : 2;
-    const pool = HIRAGANA_LIST.map(item => {
+    const pool = activeList.map(item => {
       const stat = charStats[item.ch] || { correct: 0, wrong: 0 };
       return { item, weight: 1 + stat.wrong * multiplier };
     });
@@ -4779,6 +5288,10 @@ function createHiraganaStatsEngine(cfg) {
       }
       result.push(pool[pickIdx].item);
       pool.splice(pickIdx, 1);
+    }
+    // 활성 세트가 count보다 작으면(예: 5자인데 10문제) 모자란 만큼 반복 출제합니다
+    while (result.length < count && activeList.length > 0) {
+      result.push(activeList[Math.floor(Math.random() * activeList.length)]);
     }
     return result;
   }
@@ -4839,13 +5352,29 @@ function createHiraganaStatsEngine(cfg) {
     });
   }
 
+  /* 🔁 복습 세트 전용 — 주어진 글자 목록(chars) 안에서만 count개를 뽑습니다.
+     대상 글자 수가 count보다 적으면 다시 섞어서 채워 중복 출제를 허용합니다 */
+  function pickFromSubset(chars, count) {
+    const list = HIRAGANA_LIST.filter(item => chars.includes(item.ch));
+    if (list.length === 0) return [];
+    const shuffled = list.slice().sort(() => Math.random() - 0.5);
+    const result = [];
+    while (result.length < count) {
+      const remaining = count - result.length;
+      const take = Math.min(remaining, shuffled.length);
+      result.push(...shuffled.slice(0, take));
+      shuffled.sort(() => Math.random() - 0.5);
+    }
+    return result;
+  }
+
   return {
     get charStats() { return charStats; },
     get weightLevel() { return weightLevel; },
     load, save, reset, getStat,
     loadWeightLevel, setWeightLevel,
-    recordMistake, recordCorrect,
-    weightedPick, renderStatGrid
+    recordMistake, recordCorrect, recordSelfJudgment,
+    weightedPick, pickFromSubset, renderStatGrid
   };
 }
 
@@ -4904,8 +5433,8 @@ function hsCountWeight() {
   return 1;
 }
 
-function hsRecordMistake(ch, amount = 1) { hsStats.recordMistake(ch, amount); }
-function hsRecordCorrect(ch, amount = 1) { hsStats.recordCorrect(ch, amount); }
+function hsRecordMistake(ch, amount = 1, isTimeout = false) { hsStats.recordMistake(ch, amount, isTimeout); recordActiveSetAttempt(ch, false, isTimeout); }
+function hsRecordCorrect(ch, amount = 1) { hsStats.recordCorrect(ch, amount); recordActiveSetAttempt(ch, true, false); }
 function hsWeightedPick(count) { return hsStats.weightedPick(count); }
 
 /* 46자 통계 그리드에서 글자 하나를 클릭하면, 그 글자가 커졌다 작아지는 애니메이션과
@@ -4989,11 +5518,25 @@ function startHiraganaSpeedGame() {
   // HIRAGANA_LIST 46자 중 10개를 뽑아 문제 세트를 만듭니다.
   // 이전 게임들에서 자주 틀린 글자일수록 더 높은 확률로 뽑히도록 오답 통계를 반영합니다
   loadHsCharStats();
-  hsQuestions = hsWeightedPick(10);
+  hsQuestions = reviewSessionActive ? hsStats.pickFromSubset(reviewSessionChars, 10) : hsWeightedPick(10);
 
   showDrillScreen('hs', 'question');
 
   showHiraganaSpeedQuestion();
+}
+
+/* 🔤 부호화 다양성(Encoding Variability): 같은 글자를 매번 똑같은 폰트로만 보여주면
+   그 특정 자형에만 종속된 얕은 기억이 형성될 수 있어요. 카드찾기(재인)와 읽기(발화) 문제에
+   등장할 때마다 폰트를 무작위로 바꿔서, 맥락(자형)과 무관하게 글자를 알아보는 힘을 길러줍니다.
+   단, 히라가나 쓰기 트레이싱 가이드(획순 캔버스, drawHwGuideChar)는 표준 자형을 유지해야
+   정확한 획순 판정이 가능하므로 절대 이 변주 대상에 포함하지 않습니다. */
+const HIRAGANA_FONT_VARIANTS = [
+  "'Shippori Mincho', serif",
+  "'Yuji Syuku', serif",
+  "'Zen Kurenaido', sans-serif"
+];
+function pickCharFontVariant(ch) {
+  return HIRAGANA_FONT_VARIANTS[Math.floor(Math.random() * HIRAGANA_FONT_VARIANTS.length)];
 }
 
 function showHiraganaSpeedQuestion() {
@@ -5017,11 +5560,13 @@ function showHiraganaSpeedQuestion() {
   void romajiEl.offsetWidth;
   romajiEl.style.animation = 'quizAppear .35s cubic-bezier(.175, .885, .32, 1.275)';
 
-  // 발음을 음성으로 들려줍니다
-  speakTTS(correct.ch);
+  // 발음을 음성으로 들려줍니다 (부호화 다양성: 매번 살짝 다른 속도/음높이로)
+  speakTTS(correct.ch, {jitter: true});
 
-  // 정답 카드 1개 + 오답 카드 (hsCardCount - 1)개를 무작위로 뽑아 순서를 섞습니다
-  const pool = HIRAGANA_LIST.filter(h => h.ch !== correct.ch);
+  // 정답 카드 1개 + 오답 카드 (hsCardCount - 1)개를 무작위로 뽑아 순서를 섞습니다.
+  // 오답 선택지도 가급적 "지금 배우는 글자" 안에서 골라야 실제로 헷갈릴 만한 연습이 됩니다
+  const activePool = getActiveCharList().filter(h => h.ch !== correct.ch);
+  const pool = activePool.length >= (hsCardCount - 1) ? activePool : HIRAGANA_LIST.filter(h => h.ch !== correct.ch);
   const shuffledPool = pool.slice().sort(() => Math.random() - 0.5);
   const wrongOnes = shuffledPool.slice(0, hsCardCount - 1);
   const cards = [correct, ...wrongOnes].sort(() => Math.random() - 0.5);
@@ -5037,16 +5582,19 @@ function showHiraganaSpeedQuestion() {
     const btn = document.createElement('button');
     btn.className = 'quiz-btn hs-card';
     btn.dataset.ch = item.ch;
-    btn.innerHTML = `<span>${item.ch}</span>`;
+    btn.innerHTML = `<span style="font-family:${pickCharFontVariant(item.ch)}">${item.ch}</span>`;
     btn.addEventListener('click', () => hsSelectAnswer(btn, item.ch === correct.ch));
     cardsContainer.appendChild(btn);
   });
 
-  animateTimerBar('hsTimerFill', 2000);
+  // 이 글자의 SRS 단계에 맞춰 제한 시간을 조절합니다(잘 아는 글자일수록 짧게, 아직 안 외운 글자는 넉넉하게)
+  const hsStage = hsStats.getStat(correct.ch).srsStage;
+  const hsTimeLimit = stageAdjustedTimeMs(HS_BASE_TIME_MS, hsStage, HS_MIN_TIME_MS);
+  animateTimerBar('hsTimerFill', hsTimeLimit);
 
   hsTimer = setTimeout(() => {
     hsTimeExpired();
-  }, 2000);
+  }, hsTimeLimit);
 }
 
 function hsSelectAnswer(btn, isCorrect) {
@@ -5104,7 +5652,7 @@ function hsTimeExpired() {
     if (b.dataset.ch === currentHsQuestion.ch) b.classList.add('correct-hint');
   });
   if (typeof playWrongSound === 'function') playWrongSound();
-  hsRecordMistake(currentHsQuestion.ch, hsCountWeight());
+  hsRecordMistake(currentHsQuestion.ch, hsCountWeight(), true);
 
   hsAdvanceTimer = setTimeout(() => {
     hsIndex += 1;
@@ -5113,7 +5661,7 @@ function hsTimeExpired() {
 }
 
 function hsReplaySound() {
-  if (currentHsQuestion) speakTTS(currentHsQuestion.ch);
+  if (currentHsQuestion) speakTTS(currentHsQuestion.ch, {jitter: true});
 }
 
 function hsShowResult() {
@@ -5121,6 +5669,8 @@ function hsShowResult() {
   document.getElementById('hsResultCorrect').textContent = hsCorrectCount;
   document.getElementById('hsResultMaxCombo').textContent = hsMaxCombo;
   document.getElementById('hsResultScore').textContent = hsScore;
+  if (!reviewSessionActive) evaluateActiveSetExpansion();
+  scheduleNextReviewRound();
 }
 
 /* 🖊️ 히라가나 쓰기(hw) - 공용 통계 엔진 인스턴스.
@@ -5140,8 +5690,9 @@ function hwGetStat(ch) { return hwStats.getStat(ch); }
 function loadHwWeightLevel() { hwStats.loadWeightLevel(); }
 function setHwWeightLevel(level) { hwStats.setWeightLevel(level); }
 function renderHwStatGrid() { hwStats.renderStatGrid(); }
-function hwRecordMistake(ch) { hwStats.recordMistake(ch); }
-function hwRecordCorrect(ch) { hwStats.recordCorrect(ch); }
+function hwRecordMistake(ch, amount = 1, isTimeout = false) { hwStats.recordMistake(ch, amount, isTimeout); recordActiveSetAttempt(ch, false, isTimeout); }
+function hwRecordCorrect(ch) { hwStats.recordCorrect(ch); recordActiveSetAttempt(ch, true, false); }
+function hwRecordSelfJudgment(ch, predicted, wasCorrect) { hwStats.recordSelfJudgment(ch, predicted, wasCorrect); }
 function hwWeightedPick(count) { return hwStats.weightedPick(count); }
 
 /* 🖊️ 히라가나 쓰기 캔버스 초기화 — 손으로 그린 궤적을 판정용 캔버스(hwDrawCanvas)에 그리고,
@@ -5281,12 +5832,58 @@ function startHiraganaWriteGame() {
   // HIRAGANA_LIST 46자 중 10개를 뽑아 문제 세트를 만듭니다.
   // 이전 게임들에서 자주 실패한 글자일수록 더 높은 확률로 뽑히도록 통계를 반영합니다
   loadHwCharStats();
-  hwQuestions = hwWeightedPick(10);
+  hwQuestions = reviewSessionActive ? hwStats.pickFromSubset(reviewSessionChars, 10) : hwWeightedPick(10);
 
   showDrillScreen('hw', 'question');
 
   initHwCanvas();
   showHiraganaWriteQuestion();
+}
+
+/* 💡 이중부호화(Dual Coding) — 쓰기 게임 문제 화면에 글자별 시각적 연상(이모지)과 짧은
+   이야기를 보조 힌트로 보여줍니다. 카드 앞면이 아니라 "필요할 때만 펼치는" 토글로 설계해서
+   불필요한 인지 부하를 늘리지 않습니다 */
+let hwMnemonicVisible = false;
+
+function renderMnemonicHint(ch) {
+  const hintEl = document.getElementById('hwMnemonicHint');
+  if (!hintEl) return;
+  const data = (typeof HIRAGANA_MNEMONICS !== 'undefined') ? HIRAGANA_MNEMONICS[ch] : null;
+  if (!data) {
+    hintEl.innerHTML = '';
+    return;
+  }
+  hintEl.innerHTML = `<span class="mnemonic-hint-image">${data.image}</span><span class="mnemonic-hint-story">${data.story}</span>`;
+}
+
+function toggleMnemonicHint() {
+  hwMnemonicVisible = !hwMnemonicVisible;
+  applyMnemonicHintVisibility();
+}
+
+function applyMnemonicHintVisibility() {
+  const hintEl = document.getElementById('hwMnemonicHint');
+  const btnEl = document.getElementById('hwMnemonicToggleBtn');
+  if (hintEl) hintEl.style.display = hwMnemonicVisible ? 'flex' : 'none';
+  if (btnEl) btnEl.textContent = hwMnemonicVisible ? '💡 힌트 접기' : '💡 연상 힌트';
+}
+
+/* 🧠 메타인지 마이크로 UI — 답하기 전 "확실해요/헷갈려요"를 선택할 수 있게 합니다.
+   선택은 완전히 선택 사항이라(안 눌러도 진행 가능), 문제 풀이 흐름을 방해하지 않습니다.
+   회상 검증(직접 손으로 쓰기)에서만 물어봐서 너무 자주 물어 피로해지지 않게 했습니다 */
+let hwPredictedJudgment = null;
+
+function selectHwJudgment(predicted) {
+  if (hwAnswered) return; // 이미 채점된 문제에는 뒤늦게 예측을 남기지 않음
+  hwPredictedJudgment = (hwPredictedJudgment === predicted) ? null : predicted; // 같은 걸 다시 누르면 선택 취소
+  updateHwJudgmentButtons();
+}
+
+function updateHwJudgmentButtons() {
+  const confidentBtn = document.getElementById('hwJudgmentConfidentBtn');
+  const unsureBtn = document.getElementById('hwJudgmentUnsureBtn');
+  if (confidentBtn) confidentBtn.classList.toggle('active', hwPredictedJudgment === 'confident');
+  if (unsureBtn) unsureBtn.classList.toggle('active', hwPredictedJudgment === 'unsure');
 }
 
 function showHiraganaWriteQuestion() {
@@ -5300,6 +5897,9 @@ function showHiraganaWriteQuestion() {
   if (hwDrawHandle) hwDrawHandle.reset();
   clearTimeout(hwTimer);
   clearTimeout(hwAdvanceTimer);
+
+  hwPredictedJudgment = null;
+  updateHwJudgmentButtons();
 
   document.getElementById('hwProgress').textContent = hwIndex + 1;
 
@@ -5324,13 +5924,23 @@ function showHiraganaWriteQuestion() {
   hwDrawCtx.clearRect(0, 0, hwDrawCanvas.width, hwDrawCanvas.height);
   updateHwProgress(0);
 
-  speakTTS(q.ch);
+  // 부호화 다양성: 매번 살짝 다른 속도/음높이로 들려줍니다
+  speakTTS(q.ch, {jitter: true});
 
-  animateTimerBar('hwTimerFill', HW_TIME_LIMIT);
+  // 이 글자의 SRS 단계에 맞춰 제한 시간을 조절합니다(잘 아는 글자일수록 짧게, 아직 안 외운 글자는 넉넉하게)
+  const hwStage = hwStats.getStat(q.ch).srsStage;
+  const hwTimeLimit = stageAdjustedTimeMs(HW_TIME_LIMIT, hwStage, HW_MIN_TIME_MS);
+  animateTimerBar('hwTimerFill', hwTimeLimit);
+
+  // 이중부호화 힌트: 처음 배우는 글자(SRS stage 0~1)는 기본으로 펼쳐두고,
+  // 이미 익숙해진 글자(stage 4+)는 접어둔 채 시작합니다 (필요하면 버튼으로 언제든 토글 가능)
+  renderMnemonicHint(q.ch);
+  hwMnemonicVisible = hwStage <= 1;
+  applyMnemonicHintVisibility();
 
   hwTimer = setTimeout(() => {
     hwTimeExpired();
-  }, HW_TIME_LIMIT);
+  }, hwTimeLimit);
 }
 
 function hwHandleSuccess() {
@@ -5349,6 +5959,7 @@ function hwHandleSuccess() {
 
   if (typeof playCorrectSound === 'function') playCorrectSound();
   hwRecordCorrect(currentHwQuestion.ch);
+  if (hwPredictedJudgment) hwRecordSelfJudgment(currentHwQuestion.ch, hwPredictedJudgment, true);
 
   const feedbackEl = document.getElementById('hwFeedback');
   feedbackEl.textContent = `🎉 성공! (${currentHwQuestion.ch} · ${currentHwQuestion.romaji})`;
@@ -5368,7 +5979,8 @@ function hwTimeExpired() {
   document.getElementById('hwCombo').textContent = hwCombo;
 
   if (typeof playWrongSound === 'function') playWrongSound();
-  hwRecordMistake(currentHwQuestion.ch);
+  hwRecordMistake(currentHwQuestion.ch, 1, true);
+  if (hwPredictedJudgment) hwRecordSelfJudgment(currentHwQuestion.ch, hwPredictedJudgment, false);
 
   const feedbackEl = document.getElementById('hwFeedback');
   feedbackEl.textContent = `⏰ 시간 종료! 정답은 (${currentHwQuestion.ch} · ${currentHwQuestion.romaji})`;
@@ -5381,7 +5993,7 @@ function hwTimeExpired() {
 }
 
 function hwReplaySound() {
-  if (currentHwQuestion) speakTTS(currentHwQuestion.ch);
+  if (currentHwQuestion) speakTTS(currentHwQuestion.ch, {jitter: true});
 }
 
 function hwShowResult() {
@@ -5389,6 +6001,8 @@ function hwShowResult() {
   document.getElementById('hwResultCorrect').textContent = hwCorrectCount;
   document.getElementById('hwResultMaxCombo').textContent = hwMaxCombo;
   document.getElementById('hwResultScore').textContent = hwScore;
+  if (!reviewSessionActive) evaluateActiveSetExpansion();
+  scheduleNextReviewRound();
 }
 
 /* 🧠 단어 메모리 게임 로직
@@ -6886,8 +7500,8 @@ function hrGetStat(ch) { return hrStats.getStat(ch); }
 function loadHrWeightLevel() { hrStats.loadWeightLevel(); }
 function setHrWeightLevel(level) { hrStats.setWeightLevel(level); }
 function renderHrStatGrid() { hrStats.renderStatGrid(); }
-function hrRecordMistake(ch) { hrStats.recordMistake(ch); }
-function hrRecordCorrect(ch) { hrStats.recordCorrect(ch); }
+function hrRecordMistake(ch, amount = 1, isTimeout = false) { hrStats.recordMistake(ch, amount, isTimeout); recordActiveSetAttempt(ch, false, isTimeout); }
+function hrRecordCorrect(ch) { hrStats.recordCorrect(ch); recordActiveSetAttempt(ch, true, false); }
 function hrWeightedPick(count) { return hrStats.weightedPick(count); }
 
 function initHiraganaReadGame(){
@@ -6925,7 +7539,7 @@ function startHiraganaReadGame(){
   // HIRAGANA_LIST 46자 중 10개를 뽑아 이번 판의 문제 세트를 만듭니다.
   // 이전 게임들에서 자주 틀린 글자일수록 더 높은 확률로 뽑히도록 통계를 반영합니다
   loadHrCharStats();
-  hrQuestions = hrWeightedPick(10);
+  hrQuestions = reviewSessionActive ? hrStats.pickFromSubset(reviewSessionChars, 10) : hrWeightedPick(10);
 
   showDrillScreen('hr', 'question');
 
@@ -6939,6 +7553,7 @@ function showHiraganaReadQuestion(){
   }
   hrAnswered = false;
   hrAttempt = 1;
+  hrAnyTimeoutThisQuestion = false;
   clearTimeout(hrAttemptTimer);
   clearTimeout(hrRetryTimer);
   clearTimeout(hrAdvanceTimer);
@@ -6948,8 +7563,12 @@ function showHiraganaReadQuestion(){
   const q = hrQuestions[hrIndex];
   currentHrQuestion = q;
 
+  // 이 글자의 SRS 단계에 맞춰 시도당 제한 시간을 조절합니다(잘 아는 글자일수록 짧게, 아직 안 외운 글자는 넉넉하게)
+  hrCurrentTimeLimit = stageAdjustedTimeMs(HR_ATTEMPT_TIME_LIMIT, hrStats.getStat(q.ch).srsStage, HR_MIN_TIME_MS);
+
   const targetEl = document.getElementById('hrTargetChar');
   targetEl.textContent = q.ch;
+  targetEl.style.fontFamily = pickCharFontVariant(q.ch);
   targetEl.style.animation = 'none';
   void targetEl.offsetWidth;
   targetEl.style.animation = 'quizAppear .35s cubic-bezier(.175, .885, .32, 1.275)';
@@ -6980,7 +7599,7 @@ function hrStartAttempt(){
   recognizedEl.classList.add('preparing');
 
   // 시도당 제한을 보여주는 타이머 바 애니메이션
-  animateTimerBar('hrTimerFill', HR_ATTEMPT_TIME_LIMIT);
+  animateTimerBar('hrTimerFill', hrCurrentTimeLimit);
 
   hrRecognition = new HrRecognitionAPI();
   hrRecognition.lang = 'ja-JP';
@@ -7035,8 +7654,9 @@ function hrStartAttempt(){
     // 제한 시간 안에 인식 결과가 오지 않으면 이번 시도는 실패로 처리합니다.
     if(hrResultHandled) return;
     hrResultHandled = true;
+    hrAnyTimeoutThisQuestion = true;
     hrHandleRecognitionResult('');
-  }, HR_ATTEMPT_TIME_LIMIT);
+  }, hrCurrentTimeLimit);
 }
 
 function hrHandleRecognitionResult(spokenText){
@@ -7111,7 +7731,7 @@ function hrHandleFinalFail(){
   document.getElementById('hrWrongScore').textContent = hrWrongScore;
 
   if(typeof playWrongSound === 'function') playWrongSound();
-  hrRecordMistake(currentHrQuestion.ch);
+  hrRecordMistake(currentHrQuestion.ch, 1, hrAnyTimeoutThisQuestion);
 
   const feedbackEl = document.getElementById('hrFeedback');
   feedbackEl.style.color = wrongFeedbackColor();
@@ -7124,6 +7744,8 @@ function hrShowResult(){
   showDrillScreen('hr', 'result');
   document.getElementById('hrResultCorrect').textContent = hrCorrectScore;
   document.getElementById('hrResultWrong').textContent = hrWrongScore;
+  if (!reviewSessionActive) evaluateActiveSetExpansion();
+  scheduleNextReviewRound();
 }
 
 /* 게임을 벗어나거나 문제가 바뀔 때 마이크와 관련 타이머를 모두 정리합니다 */
@@ -8810,11 +9432,16 @@ const TOP_MENU_EXTRA_ITEMS = [
     id: 'ltm', title: '장기기억 현황', emoji: '🧠',
     desc: '히라가나 글자별로 장기기억에 얼마나 잘 저장됐는지 확인해요',
     action: () => { openMenuPanel('menuLtmLevel'); renderLtmDashboard(); }
+  },
+  {
+    id: 'theory', title: '학습이론', emoji: '📚',
+    desc: '이 앱에 적용된 장기기억 학습 이론과 기능을 그림으로 설명해요',
+    action: () => openMenuPanel('menuTheoryLevel')
   }
 ];
 
 function hideAllMenuPanels(){
-  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel'].forEach(id => {
+  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel', 'menuTheoryLevel'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -8916,6 +9543,8 @@ function launchGame(mode){
    단, 히라가나 스피드게임의 결과 화면에서는 상위 카테고리 선택 화면으로 나가는 대신
    글자별 통계와 "게임 시작하기" 버튼이 있는 시작 화면으로 돌아갑니다 */
 function backToCategoryFromGame(){
+  if (reviewSessionActive) cancelReviewSession();
+
   const hiraganaSpeedModeEl = document.getElementById('hiraganaSpeedMode');
   const hsResultScreenEl = document.getElementById('hsResultScreen');
   if (hiraganaSpeedModeEl && hiraganaSpeedModeEl.classList.contains('active') &&
