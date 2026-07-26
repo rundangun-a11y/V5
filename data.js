@@ -2397,6 +2397,28 @@ const HIRAGANA_ROW_GROUPS = (function () {
 
 const HS_COL_HEADS = ['a', 'i', 'u', 'e', 'o'];
 
+/* 🔀 분산 학습 · 간섭 방지(Interference Avoidance) — learning-theory-roadmap.md Part 4 §1.
+   자형(글자 모양)이 비슷해 아이들이 실제로 자주 혼동하는 히라가나 묶음. 청킹
+   (HIRAGANA_ROW_GROUPS, 오십음도 행 단위)과 달리 이 묶음은 **행과 무관하게** 순수히
+   "생김새가 닮아서 헷갈리는" 기준으로만 묶은 것 — 예를 들어 め/ぬ는 각각 め행/な행으로
+   서로 다른 행이지만 자형이 비슷해 여기서는 같은 묶음.
+   같은 묶음 안 글자가 한 문제의 선택지로 동시에 나오거나 바로 이어진 문제로 연달아
+   나오지 않도록 출제 로직(logic.js의 spaceOutConfusionGroups/isSameConfusionGroup)에서
+   참고함. 언어학적으로 확정된 표준 목록은 아니고, 아동 히라가나 학습에서 흔히 지적되는
+   혼동 사례를 정리한 시작점 — 실제 오답 데이터가 쌓이면 추후 조정 권장. */
+const HIRAGANA_CONFUSION_GROUPS = [
+  ['め', 'ぬ'],
+  ['わ', 'れ', 'ね'],
+  ['さ', 'き'],
+  ['る', 'ろ'],
+  ['く', 'へ'],
+  ['り', 'い'],
+  ['は', 'ほ'],
+  ['ま', 'も'],
+  ['す', 'む'],
+  ['し', 'つ']
+];
+
 const SONGS = [
   {
     title: "いない いない ばあ",
@@ -3099,6 +3121,72 @@ const STAGE_TO_HIRAGANA_MODE = {
   C: 'hiraganaWrite',
   D: 'hiraganaRead',
   E: null
+};
+
+/* 🔀 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2.
+   기존 GAME_STAGE_MAP(A~D 단계 매핑)과 같은 34개 게임 모드를, 이번엔 다른 축인
+   "제시 모달리티"(present: 정보를 어떤 감각으로 주는지)와 "응답 모달리티"(response:
+   아이가 어떤 방식으로 반응하는지) 두 필드로 재분류한 것. 같은 GAME_STAGE_MAP 객체에
+   필드를 얹지 않고 별도 맵으로 분리한 이유: 기존 GAME_STAGE_MAP은 여러 곳에서
+   `GAME_STAGE_MAP[mode] === 'B'`처럼 문자열 값 자체를 직접 비교하는 코드가 많아,
+   값을 객체로 바꾸면 그 호출부를 전부 찾아 고쳐야 해서 회귀 리스크가 큼. 별도 맵으로
+   두면 기존 코드는 전혀 건드리지 않고 이 축만 새로 조회할 수 있음.
+   - present: 'audio'(듣고) / 'text'(글자를 보고) / 'image'(그림·상황을 보고)
+   - response: 'passive'(그냥 감상) / 'select'(고르기) / 'write'(쓰기) / 'speak'(말하기)
+   1차 구현 범위: 데이터 정의 + "오늘의 추천" 배너에 모달리티 안내 문구 노출까지만.
+   실제 추천 로직이 "직전과 다른 모달리티를 우선 선택"하도록 만드는 것은, 현재
+   STAGE_TO_HIRAGANA_MODE가 단계마다 게임을 1개로 고정해둔 구조라(대안이 없어 로테이션할
+   여지 자체가 없음) 이번 세션에서는 보류함 — §3 오케스트레이터가 어휘 축으로 확장되어
+   한 단계에 여러 게임이 후보로 오르게 될 때 함께 다루는 것을 권장. */
+const GAME_MODALITY_MAP = {
+  // A. 최초 노출 — 정답을 요구하지 않는 수동적 다중 노출
+  storybook: { present: 'image', response: 'passive' },
+  emojiStorybook: { present: 'image', response: 'passive' },
+  ebook: { present: 'text', response: 'passive' },
+  karaoke: { present: 'audio', response: 'passive' },
+  songs: { present: 'audio', response: 'passive' },
+  pronounce: { present: 'audio', response: 'passive' },
+  exposure: { present: 'audio', response: 'passive' },
+  scene: { present: 'image', response: 'passive' },
+
+  // B. 재인 연습 — 선택 응답
+  quiz: { present: 'audio', response: 'select' },
+  audioEmoji: { present: 'audio', response: 'select' },
+  riddle: { present: 'text', response: 'select' },
+  qa: { present: 'text', response: 'select' },
+  shop: { present: 'image', response: 'select' },
+  lifeqa: { present: 'text', response: 'select' },
+  hiraganaSpeed: { present: 'audio', response: 'select' },
+  adjective: { present: 'text', response: 'select' },
+  matching: { present: 'image', response: 'select' },
+  linematch: { present: 'image', response: 'select' },
+  wordMemory: { present: 'image', response: 'select' },
+  eawase: { present: 'image', response: 'select' },
+  silhouette: { present: 'image', response: 'select' },
+  kanjiCards: { present: 'text', response: 'select' },
+
+  // C. 회상 연습 — 직접 쓰는 응답
+  spelling: { present: 'audio', response: 'write' },
+  onomatopoeia: { present: 'audio', response: 'write' },
+  writing: { present: 'text', response: 'write' },
+  hiraganaWrite: { present: 'audio', response: 'write' },
+  trace: { present: 'image', response: 'write' },
+  worksheet: { present: 'text', response: 'write' },
+  dakuonTest: { present: 'audio', response: 'write' },
+
+  // D. 발화·전이 — 말하기 또는 조합·탐색형 선택 응답
+  speech: { present: 'text', response: 'speak' },
+  hiraganaRead: { present: 'text', response: 'speak' },
+  sentence: { present: 'text', response: 'select' },
+  compound: { present: 'text', response: 'select' },
+  wordsearch: { present: 'image', response: 'select' }
+};
+
+/* 모달리티 값 → 아이 친화적 표시 문구. "오늘의 추천" 배너 등에서 조합해 사용
+   (예: 소리로 + 고르기 → "🔊 소리로 듣고 고르기"). */
+const GAME_MODALITY_LABELS = {
+  present: { audio: '🔊 소리로', text: '🔤 글자로', image: '🖼️ 그림으로' },
+  response: { passive: '감상하기', select: '고르기', write: '쓰기', speak: '말하기' }
 };
 
 

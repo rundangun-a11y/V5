@@ -1,5 +1,5 @@
 // 아주 단순한 서비스워커: PWA 설치 조건을 만족시키고, 방문했던 페이지를 캐싱해 오프라인에서도 열리게 합니다.
-const CACHE_NAME = 'koe-app-v21';
+const CACHE_NAME = 'koe-app-v30';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

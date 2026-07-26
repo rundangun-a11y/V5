@@ -505,7 +505,15 @@ const stampRomaji = document.getElementById('stampRomaji');
 const stampKr = document.getElementById('stampKr');
 const logList = document.getElementById('logList');
 const galleryEl = document.getElementById('gallery');
-let wordStats = {}; // 📊 단어별 정답/오답 통계 { [jp]: { correct: number, wrong: number } } - 모든 게임 모드 공통 누적
+let wordStats = {}; // 📊 단어별 정답/오답 통계 { [jp]: { correct, wrong, channels:{B,C,D} } } - 모든 게임 모드 공통 누적, localStorage에 영속 저장됨
+const WORD_STATS_KEY = 'kotobaWordGameStats';
+
+/* 🪜 §2 단계 판정 일반화 — learning-theory-roadmap.md Part 2 §6(a).
+   지금 어떤 게임 모드가 실행 중인지 기록해두는 전역 변수. switchMode()에서 매번 갱신되며,
+   recordWordResult()가 이 값을 GAME_STAGE_MAP으로 조회해 정답/오답을 B(재인)/C(회상)/D(발화)
+   채널 중 어디에 쌓을지 판단하는 데 사용함(히라가나의 hsStats/hwStats/hrStats 3채널 구조를
+   단어 축으로 일반화한 것). A단계(듣기 전용) 게임은 정오답 개념이 없어 채널 기록 대상이 아님. */
+let currentGameMode = null;
 
 /* ⚡ 히라가나 스피드게임 전역 상태 */
 let hsQuestions = [];
@@ -614,6 +622,40 @@ function srsForgetProbability(stat, now) {
   return 1 - retention;
 }
 
+/* 🔀 분산 학습 · 간섭 방지 — learning-theory-roadmap.md Part 4 §1.
+   두 글자가 HIRAGANA_CONFUSION_GROUPS(data.js)의 같은 묶음에 속하는지 확인합니다.
+   자형이 비슷한 글자끼리는 같은 문제의 선택지로 동시에 나오거나 바로 이어 나오면
+   서로 헷갈려 기억이 뒤섞이는 간섭이 일어나기 쉬우므로, 이를 판별하는 데 씁니다. */
+function isSameConfusionGroup(chA, chB) {
+  if (chA === chB) return false;
+  return HIRAGANA_CONFUSION_GROUPS.some(group => group.includes(chA) && group.includes(chB));
+}
+
+/* 이미 뽑힌 문제 순서(list, {ch, ...} 배열)를 받아, 같은 혼동군 글자가 최근 minGap개
+   이내에 다시 등장하지 않도록 순서만 재배치합니다(어떤 글자가 뽑혔는지 자체는 그대로
+   유지 — SRS 가중치로 이미 결정된 "누가 뽑히는지"는 건드리지 않고 "어떤 순서로 나오는지"만
+   조정하는 최소 침습적 방식). 뒤쪽에서 자리를 바꿀 만한 후보를 찾지 못하면 그 자리는
+   충돌을 감수하고 그대로 둡니다(완전히 막을 수 없는 경우도 있음 — 예: 활성 세트가
+   혼동군 글자로만 구성된 경우). */
+function spaceOutConfusionGroups(list) {
+  if (!list || list.length <= 2) return list;
+  const arr = list.slice();
+  const minGap = 2;
+  for (let i = 1; i < arr.length; i++) {
+    const recentWindow = arr.slice(Math.max(0, i - minGap), i);
+    const hasConflict = recentWindow.some(prev => isSameConfusionGroup(prev.ch, arr[i].ch));
+    if (!hasConflict) continue;
+    for (let j = i + 1; j < arr.length; j++) {
+      const candidateConflict = recentWindow.some(prev => isSameConfusionGroup(prev.ch, arr[j].ch));
+      if (!candidateConflict && !isSameConfusionGroup(arr[j].ch, arr[i - 1] ? arr[i - 1].ch : null)) {
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        break;
+      }
+    }
+  }
+  return arr;
+}
+
 /* 🧠 SRS 가중 무작위 뽑기 (히라가나 카드찾기/쓰기 공용).
    망각 확률이 높을수록(=복습 시점이 다가왔거나 이미 지났을수록) 더 높은 확률로 뽑히고,
    최근에 잘 기억하고 있는 글자는 낮은 확률로 뽑힙니다. 완전히 0으로 만들지는 않고
@@ -703,8 +745,10 @@ function renderLtmDashboard() {
   hsStats.load();
   hwStats.load();
   hrStats.load();
+  loadWordStats();
 
   renderActiveSetPanel();
+  renderVocabStageOverview();
 
   const grid = document.getElementById('ltmStatGrid');
   if (!grid) return;
@@ -770,6 +814,132 @@ function renderLtmDashboard() {
       descEl.textContent = `복습이 급한 글자는 없어요! 학습 중인 글자 ${counts.progress}개로 대신 다져볼까요?`;
     } else {
       descEl.textContent = '지금은 복습할 글자가 없어요 🎉';
+    }
+  }
+}
+
+/* 🪜 §2 단계 판정 일반화 — learning-theory-roadmap.md Part 2 §6(a).
+   히라가나 밖(퀴즈·쓰기·말하기·문장조합 등 모든 게임 모드에서 나온) 단어들의
+   A~E 단계 분포를 "장기기억 현황" 패널 하단에 보여줌. renderLtmDashboard()에서
+   함께 호출되어, 패널을 열 때마다 최신 wordStats로 다시 그려짐 */
+function renderVocabStageOverview() {
+  const row = document.getElementById('ltmVocabStageRow');
+  const countEl = document.getElementById('ltmVocabStageCount');
+  if (!row) return;
+
+  const { dist, total } = computeVocabStageDistribution();
+  if (countEl) countEl.textContent = `${total}개 단어 기록됨`;
+
+  const stageEmoji = { A: '👂', B: '🔍', C: '✍️', D: '🗣️', E: '🌱' };
+  row.innerHTML = '';
+  ['A', 'B', 'C', 'D', 'E'].forEach(stage => {
+    const info = GAME_STAGE_INFO[stage];
+    const chip = document.createElement('span');
+    chip.className = 'ltm-vocab-stage-chip';
+    chip.innerHTML = `<span>${stageEmoji[stage]}</span><span>${info.label}</span><b>${dist[stage]}</b>`;
+    row.appendChild(chip);
+  });
+}
+
+/* 🌳 오답 나무 키우기 — learning-theory-roadmap.md Part 3 §4.
+   새로운 기억 메커니즘이 아니라, 이미 구현된 SRS 기록(hwStats의 srsStage)을 그대로
+   재사용해 "씨앗→새싹→꽃→나무" 4단계 식물로 다시 매핑한 시각화입니다. 판정 로직을
+   새로 만들지 않고, 복습 세트(startReviewSession)를 실제로 하고 싶게 만드는 행동
+   유도 장치 역할만 합니다. 쓰기(hw) 채널 기준으로 삼는 이유는 computeLtmStatus()와
+   동일하게 회상(직접 산출)이 재인보다 더 엄격한 증거이기 때문입니다 */
+const MISTAKE_GARDEN_LAST_TIERS_KEY = 'kotobaMistakeGardenLastTiers';
+const MISTAKE_GARDEN_STAGES = [
+  { min: 0, max: 0, emoji: '🌰', label: '씨앗' },
+  { min: 1, max: 2, emoji: '🌱', label: '새싹' },
+  { min: 3, max: 4, emoji: '🌸', label: '꽃' },
+  { min: 5, max: 7, emoji: '🌳', label: '나무' }
+];
+
+function loadMistakeGardenLastTiers() {
+  try {
+    const raw = localStorage.getItem(MISTAKE_GARDEN_LAST_TIERS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveMistakeGardenLastTiers(tiers) {
+  try {
+    localStorage.setItem(MISTAKE_GARDEN_LAST_TIERS_KEY, JSON.stringify(tiers));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* "오답 정원" 패널을 렌더링합니다. 지난번 방문 때보다 성장 단계가 오른 글자는
+   짧게 튀어오르는 애니메이션(mg-grew)으로 강조해 "복습해서 키웠다"는 성취감을 줍니다.
+   렌더링이 끝나면 이번 방문의 단계를 다음 비교 기준으로 저장합니다 */
+function renderMistakeGardenPanel() {
+  hwStats.load();
+
+  const grid = document.getElementById('mistakeGardenGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const lastTiers = loadMistakeGardenLastTiers();
+  const currentTiers = {};
+  const counts = [0, 0, 0, 0];
+  let grownCount = 0;
+
+  grid.appendChild(document.createElement('div'));
+  HS_COL_HEADS.forEach(head => {
+    const h = document.createElement('div');
+    h.className = 'hs-stat-colhead';
+    h.textContent = head;
+    grid.appendChild(h);
+  });
+
+  HS_TABLE_ROWS.forEach(row => {
+    const rowHead = document.createElement('div');
+    rowHead.className = 'hs-stat-rowhead';
+    rowHead.textContent = row.label;
+    grid.appendChild(rowHead);
+
+    row.chars.forEach(ch => {
+      if (!ch) {
+        grid.appendChild(document.createElement('div'));
+        return;
+      }
+      const hwStage = hwStats.getStat(ch).srsStage;
+      let tierIndex = MISTAKE_GARDEN_STAGES.findIndex(s => hwStage >= s.min && hwStage <= s.max);
+      if (tierIndex < 0) tierIndex = 0;
+      const info = MISTAKE_GARDEN_STAGES[tierIndex];
+      currentTiers[ch] = tierIndex;
+      counts[tierIndex] += 1;
+
+      const grew = typeof lastTiers[ch] === 'number' && tierIndex > lastTiers[ch];
+      if (grew) grownCount += 1;
+
+      const cell = document.createElement('div');
+      cell.className = `mg-stat-cell mg-tier-${tierIndex}` + (grew ? ' mg-grew' : '');
+      cell.title = `${ch} · ${info.label}`;
+      cell.innerHTML = `
+        <span class="mg-cell-emoji">${info.emoji}</span>
+        <span class="mg-cell-ch">${ch}</span>
+      `;
+      grid.appendChild(cell);
+    });
+  });
+
+  saveMistakeGardenLastTiers(currentTiers);
+
+  MISTAKE_GARDEN_STAGES.forEach((stage, i) => {
+    const el = document.getElementById('mgCount' + i);
+    if (el) el.textContent = counts[i];
+  });
+
+  const descEl = document.getElementById('mgGardenDesc');
+  if (descEl) {
+    if (grownCount > 0) {
+      descEl.textContent = `🌦️ 지난번보다 ${grownCount}그루가 자랐어요! 오늘도 물을 주러 가볼까요?`;
+    } else if (counts[3] === HIRAGANA_LIST.length) {
+      descEl.textContent = '와, 정원의 나무가 전부 다 자랐어요! 🎉';
+    } else {
+      descEl.textContent = '복습 세트로 글자를 맞히면 나무가 무럭무럭 자라요';
     }
   }
 }
@@ -1157,7 +1327,479 @@ function computeSleepConsolidationNote(ch) {
   return `<div class="ltm-detail-row ltm-detail-sleep">🌙 오늘 이미 여러 번 복습했어요 — 지금부터는 하루 자고 다시 만나야 더 오래 기억에 남아요</div>`;
 }
 
+/* ============================================================
+   🌙 수면 전 통합 프롬프트 — learning-theory-roadmap.md Part 4 §3.
+   "잠들기 직전에 마지막으로 접한 정보가 장기기억에 유리하다"는 연구를 활용해,
+   저녁 시간대에 앱을 열면 오늘 만난 항목을 가볍게 다시 보여주는 넛지.
+   기존 "같은 날 중복 상승 제한"(수면 의존 기억 공고화, 위 computeSleepConsolidationNote)이
+   수동적 안전장치였다면, 이건 능동적으로 먼저 다가가는 기능임.
+   ============================================================ */
+
+const TODAY_LEARNED_LOG_KEY = 'kotobaTodayLearnedLog';
+const PRE_SLEEP_DISMISSED_KEY = 'kotobaPreSleepDismissedDay';
+const TODAY_LEARNED_LOG_MAX = 30; // 하루치 로그가 무한정 커지지 않도록 최근 N개만 유지
+let todayLearnedLog = { day: null, items: [] };
+
+/* 오늘(달력 날짜 기준) 로그를 localStorage에서 불러옵니다. 날짜가 바뀌었으면
+   자동으로 빈 로그로 리셋합니다(calendarDayNumber() 재사용) */
+function loadTodayLearnedLog() {
+  const today = calendarDayNumber(Date.now());
+  try {
+    const raw = localStorage.getItem(TODAY_LEARNED_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    todayLearnedLog = (parsed && parsed.day === today) ? parsed : { day: today, items: [] };
+  } catch (e) {
+    todayLearnedLog = { day: today, items: [] };
+  }
+}
+
+function saveTodayLearnedLog() {
+  try {
+    localStorage.setItem(TODAY_LEARNED_LOG_KEY, JSON.stringify(todayLearnedLog));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 글자(히라가나)/단어를 하나 오늘 로그에 남깁니다. type: 'char'(key=글자) 또는
+   'word'(key=jp, extra에 kr/emoji를 함께 넘기면 사전 조회 없이 바로 렌더링에 씀).
+   같은 항목이 오늘 여러 번 나오면 맨 뒤로 옮겨 "가장 최근"으로만 취급하고 중복 저장하지 않음 */
+function logTodayLearned(type, key, isCorrect, extra) {
+  if (!key) return;
+  const today = calendarDayNumber(Date.now());
+  if (todayLearnedLog.day !== today) todayLearnedLog = { day: today, items: [] };
+
+  todayLearnedLog.items = todayLearnedLog.items.filter(it => !(it.type === type && it.key === key));
+  todayLearnedLog.items.push({ type, key, ts: Date.now(), wasWrong: !isCorrect, extra: extra || null });
+  if (todayLearnedLog.items.length > TODAY_LEARNED_LOG_MAX) {
+    todayLearnedLog.items = todayLearnedLog.items.slice(-TODAY_LEARNED_LOG_MAX);
+  }
+  saveTodayLearnedLog();
+  recordStreakActivity(); // 🔥 스트릭 — 오늘 학습 활동이 실제로 있었을 때만 도장을 찍음
+}
+
+/* 🔥 스트릭 / 출석 도장판 (Part 3 §5) — 새로운 기억 메커니즘이 아니라, 간격 반복(SRS)이
+   실제로 작동하려면 전제되는 "꾸준한 접속"을 유도하는 습관 형성 장치입니다. 매일 학습이
+   이뤄지게 만드는 것이 결과적으로 망각곡선 관리의 성패를 좌우합니다.
+   calendarDayNumber()(수면 의존 공고화에서 만든 자정 경계 헬퍼)를 그대로 재사용합니다 */
+const STREAK_KEY = 'kotobaStreak';
+let streakState = { lastVisitCalendarDay: null, currentStreak: 0, longestStreak: 0 };
+
+/* localStorage에서 스트릭 상태를 불러옵니다. 값이 없거나 손상됐으면 처음 상태로 시작 */
+function loadStreakState() {
+  try {
+    const raw = localStorage.getItem(STREAK_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    streakState = (parsed && typeof parsed === 'object')
+      ? {
+          lastVisitCalendarDay: (typeof parsed.lastVisitCalendarDay === 'number') ? parsed.lastVisitCalendarDay : null,
+          currentStreak: parsed.currentStreak || 0,
+          longestStreak: parsed.longestStreak || 0
+        }
+      : { lastVisitCalendarDay: null, currentStreak: 0, longestStreak: 0 };
+  } catch (e) {
+    streakState = { lastVisitCalendarDay: null, currentStreak: 0, longestStreak: 0 };
+  }
+  return streakState;
+}
+
+function saveStreakState() {
+  try {
+    localStorage.setItem(STREAK_KEY, JSON.stringify(streakState));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 오늘 학습 활동(정답/오답 기록)이 하나라도 생겼을 때 호출됩니다(logTodayLearned()에서 재사용).
+   오늘 이미 반영했으면 아무것도 하지 않고, 어제까지 연속이었으면 스트릭을 이어가고(+1),
+   하루 이상 비어 끊겼으면(또는 처음이면) 1부터 다시 시작합니다 */
+function recordStreakActivity() {
+  const today = calendarDayNumber(Date.now());
+  if (streakState.lastVisitCalendarDay === today) return; // 오늘 몫은 이미 반영됨
+
+  streakState.currentStreak = (streakState.lastVisitCalendarDay === today - 1)
+    ? streakState.currentStreak + 1
+    : 1;
+  streakState.lastVisitCalendarDay = today;
+  streakState.longestStreak = Math.max(streakState.longestStreak, streakState.currentStreak);
+  saveStreakState();
+  renderStreakBoard(true); // 방금 새로 찍힌 오늘 도장에만 팝 애니메이션 적용
+}
+
+/* 화면에 보여줄 "지금 유효한" 스트릭 일수 — 마지막 활동일이 오늘이거나 어제면 저장된 값을
+   그대로 쓰고(오늘 학습 전이라도 아직 끊긴 게 아니므로), 그보다 오래됐으면 이미 끊긴 것으로
+   보고 0을 반환합니다. 저장된 currentStreak/longestStreak 자체는 다음 활동 때 자연히 갱신되므로
+   여기서 강제로 리셋하지 않습니다(죄책감을 유발하는 문구·리셋 애니메이션 없이 조용히 처리) */
+function getDisplayStreak() {
+  if (streakState.lastVisitCalendarDay == null) return 0;
+  const gap = calendarDayNumber(Date.now()) - streakState.lastVisitCalendarDay;
+  return gap <= 1 ? streakState.currentStreak : 0;
+}
+
+/* 메인 화면 상단 도장판 — 최근 7일 칸을 그리고, 유효한 스트릭 범위만큼 도장(印)을 채웁니다.
+   animateFreshStamp가 true면 "오늘" 칸에만 팝 애니메이션 클래스를 붙입니다(방금 막 찍었을 때만) */
+function renderStreakBoard(animateFreshStamp) {
+  const board = document.getElementById('streakBoard');
+  if (!board) return;
+  loadStreakState();
+
+  const today = calendarDayNumber(Date.now());
+  const displayStreak = getDisplayStreak();
+  const streakEnd = streakState.lastVisitCalendarDay; // 스트릭이 유효할 때, 도장이 찍힌 마지막 날
+  const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+  let daysHtml = '';
+  for (let i = 6; i >= 0; i--) {
+    const dayNum = today - i;
+    const isToday = i === 0;
+    const isStamped = displayStreak > 0 && streakEnd != null &&
+      dayNum > streakEnd - displayStreak && dayNum <= streakEnd;
+    const freshClass = (isToday && isStamped && animateFreshStamp) ? ' streak-day-fresh' : '';
+    // dayNum은 calendarDayNumber()가 만든 "UTC 자정 기준 일련번호"라 그대로 Date로 복원해 요일만 뽑음
+    const label = dayLabels[new Date(dayNum * SRS_MS_PER_DAY).getUTCDay()];
+    daysHtml += `
+      <div class="streak-day${isStamped ? ' streak-day-stamped' : ''}${isToday ? ' streak-day-today' : ''}${freshClass}">
+        <div class="streak-day-label">${label}</div>
+        <div class="streak-day-stamp">${isStamped ? '印' : ''}</div>
+      </div>`;
+  }
+
+  const titleText = displayStreak > 0
+    ? `🔥 ${displayStreak}일 연속 학습 중이에요!`
+    : (streakState.longestStreak > 0 ? '오늘부터 다시 시작해도 괜찮아요' : '오늘 학습하면 도장이 찍혀요');
+  const bestBadge = streakState.longestStreak > 0
+    ? `<span class="streak-board-best">최고 ${streakState.longestStreak}일</span>`
+    : '';
+
+  board.style.display = 'block';
+  board.innerHTML = `
+    <div class="streak-board-head">
+      <span class="streak-board-title">${titleText}</span>
+      ${bestBadge}
+    </div>
+    <div class="streak-days">${daysHtml}</div>
+  `;
+}
+
+/* 지금이 "저녁 시간대"인지 — 로드맵 원안(21시 이후)에 더해, 자정을 넘겨서도
+   여전히 밤인 시간(새벽 4시 전)까지는 같은 넛지를 보여주는 것을 허용함 */
+function isPreSleepHour(now) {
+  const hour = new Date(now).getHours();
+  return hour >= 21 || hour < 4;
+}
+
+/* 오늘 로그 중 "자기 전에 다시 볼 만한" 대표 항목을 최대 limit개 고릅니다.
+   오답이 있었던 항목을 우선하고(복습 가치가 더 큼), 그 다음은 최근 순 */
+function getPreSleepHighlights(limit) {
+  const items = todayLearnedLog.items.slice();
+  items.sort((a, b) => {
+    if (a.wasWrong !== b.wasWrong) return a.wasWrong ? -1 : 1;
+    return b.ts - a.ts;
+  });
+  return items.slice(0, limit).map(it => enrichTodayLearnedItem(it));
+}
+
+/* 로그 항목 하나를 렌더링에 필요한 표시 정보(문자/발음/뜻/이모지)로 채워줍니다 */
+function enrichTodayLearnedItem(item) {
+  if (item.type === 'char') {
+    const found = HIRAGANA_LIST.find(h => h.ch === item.key);
+    return { type: 'char', ch: item.key, romaji: found ? found.romaji : '' };
+  }
+  const dictEntry = DICTIONARY.find(d => d.jp === item.key);
+  const extra = item.extra || {};
+  return {
+    type: 'word',
+    jp: item.key,
+    kr: extra.kr || (dictEntry && dictEntry.kr) || '',
+    emoji: extra.emoji || (dictEntry && dictEntry.emoji) || '📚'
+  };
+}
+
+/* 오늘 이미 이 프롬프트를 닫았으면 다시 보여주지 않도록 날짜만 저장해둔 값을 확인 */
+function isPreSleepPromptDismissedToday() {
+  try {
+    return localStorage.getItem(PRE_SLEEP_DISMISSED_KEY) === String(calendarDayNumber(Date.now()));
+  } catch (e) {
+    return false;
+  }
+}
+
+function dismissPreSleepPrompt() {
+  try {
+    localStorage.setItem(PRE_SLEEP_DISMISSED_KEY, String(calendarDayNumber(Date.now())));
+  } catch (e) { /* 무시 */ }
+  const banner = document.getElementById('preSleepBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+/* 메인 화면 상단에 "오늘 만난 소중한 단어, 자기 전에 가볍게 볼까요?" 카드를 보여줍니다.
+   저녁 시간대가 아니거나, 오늘 로그가 없거나, 이미 닫았으면 아무것도 표시하지 않습니다.
+   ⚠️ 절대 정답/오답을 판정하는 퀴즈 톤이 되지 않도록 주의 — 가벼운 재노출 목적 */
+function renderPreSleepPrompt() {
+  const banner = document.getElementById('preSleepBanner');
+  if (!banner) return;
+
+  loadTodayLearnedLog();
+  const shouldShow = isPreSleepHour(Date.now()) &&
+    todayLearnedLog.items.length > 0 &&
+    !isPreSleepPromptDismissedToday();
+
+  if (!shouldShow) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <div class="pre-sleep-body" onclick="openPreSleepView()">
+      <div class="pre-sleep-emoji">🌙</div>
+      <div class="pre-sleep-text">
+        <div class="pre-sleep-title">오늘 만난 소중한 것들, 자기 전에 가볍게 볼까요?</div>
+        <div class="pre-sleep-desc">1분이면 충분해요 — 정답을 맞히는 게 아니라 그냥 다시 만나보는 시간이에요</div>
+      </div>
+    </div>
+    <button class="pre-sleep-close-btn" onclick="dismissPreSleepPrompt()" aria-label="닫기">✕</button>
+  `;
+}
+
+/* "1분 요약" 미니 뷰 — 화면 전환 없이 오늘 만난 항목 최대 3개를 카드로 보여줍니다.
+   맞았는지 틀렸는지 표시하지 않고, 그냥 다시 한 번 눈에 담는 것이 목적입니다 */
+function openPreSleepView() {
+  const overlay = document.getElementById('preSleepViewOverlay');
+  const list = document.getElementById('preSleepViewList');
+  if (!overlay || !list) return;
+
+  const highlights = getPreSleepHighlights(3);
+  list.innerHTML = highlights.map(h => {
+    if (h.type === 'char') {
+      return `
+        <div class="pre-sleep-item-card">
+          <div class="pre-sleep-card-main">${h.ch}</div>
+          <div class="pre-sleep-card-sub">${h.romaji}</div>
+        </div>`;
+    }
+    return `
+      <div class="pre-sleep-item-card">
+        <div class="pre-sleep-card-main">${h.emoji}</div>
+        <div class="pre-sleep-card-sub">${h.jp}${h.kr ? ' · ' + h.kr : ''}</div>
+      </div>`;
+  }).join('');
+
+  overlay.style.display = 'flex';
+}
+
+function closePreSleepView() {
+  const overlay = document.getElementById('preSleepViewOverlay');
+  if (overlay) overlay.style.display = 'none';
+  dismissPreSleepPrompt();
+}
+
+/* 4~5개의 "나의 하루" 이모지 후보 — 자유 텍스트 입력 대신 이모지 선택만으로
+   자기참조(self-reference)를 표현하게 해서, 아이의 타이핑 부담을 최소화합니다 */
+const SELF_REFERENCE_EMOJI_OPTIONS = [
+  { emoji: '🏠', label: '우리집' },
+  { emoji: '🍚', label: '밥 먹을 때' },
+  { emoji: '👨‍👩‍👧', label: '가족' },
+  { emoji: '🐶', label: '동물' },
+  { emoji: '😴', label: '잘 때' }
+];
+const SELF_REFERENCE_NOTES_KEY = 'kotobaSelfReferenceNotes';
+
+/* 글자별 자기참조 메모(선택된 이모지)를 불러옵니다. 서버 전송 없이 기기 로컬에만 저장합니다 */
+function loadSelfReferenceNotes() {
+  try {
+    const raw = localStorage.getItem(SELF_REFERENCE_NOTES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSelfReferenceNotes(notes) {
+  try {
+    localStorage.setItem(SELF_REFERENCE_NOTES_KEY, JSON.stringify(notes));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 정교화된 시연 · 자기참조 효과(Elaborative Rehearsal & Self-Reference) —
+   장기기억 상세보기에 "이 글자, 나의 하루와 닮은 점이 있나요?" 가벼운 질문을 두고,
+   아이가 이모지 하나를 골라 자기 경험과 연결짓게 합니다. 강제가 아니라 완전히 선택 사항이며,
+   다음에 같은 글자를 다시 볼 때 지난번 선택을 함께 보여줘 자기참조 효과를 한 번 더 강화합니다 */
+function renderSelfReferenceHtml(ch) {
+  const notes = loadSelfReferenceNotes();
+  const picked = notes[ch] || null;
+  const optionsHtml = SELF_REFERENCE_EMOJI_OPTIONS.map(opt => {
+    const activeClass = picked === opt.emoji ? ' self-ref-btn-active' : '';
+    return `<button class="self-ref-btn${activeClass}" onclick="toggleSelfReferenceEmoji('${ch}', '${opt.emoji}')" title="${opt.label}">${opt.emoji}</button>`;
+  }).join('');
+  const noteText = picked
+    ? `<div class="self-ref-note">지난번에 네가 고른 건 ${picked}예요 — 오늘도 그런가요?</div>`
+    : '';
+  return `
+    <div class="ltm-detail-self-ref" id="ltmSelfRefBox-${ch}">
+      <div class="ltm-detail-self-ref-title">💭 이 글자, 나의 하루와 닮은 점이 있나요?</div>
+      <div class="self-ref-btn-row">${optionsHtml}</div>
+      ${noteText}
+    </div>`;
+}
+
+/* 자기참조 이모지 버튼 클릭 처리 — 이미 골랐던 것을 다시 누르면 선택을 취소합니다(강제 아님) */
+function toggleSelfReferenceEmoji(ch, emoji) {
+  const notes = loadSelfReferenceNotes();
+  if (notes[ch] === emoji) {
+    delete notes[ch];
+  } else {
+    notes[ch] = emoji;
+  }
+  saveSelfReferenceNotes(notes);
+  const box = document.getElementById('ltmSelfRefBox-' + ch);
+  if (box) box.outerHTML = renderSelfReferenceHtml(ch);
+}
+
+/* 🎙️ 프로덕션 효과(Production Effect) — 소리 도감 · 내 목소리 녹음 비교
+   눈으로 보거나 귀로 듣기만 할 때보다, 스스로 소리 내어 산출(production)한 정보가 더 오래
+   기억에 남는다는 연구를 반영합니다. 원어민 발음(TTS)과 내 목소리를 나란히 비교해 들으면
+   산출 과정 자체가 한 번 더 인출 연습이 됩니다. 녹음은 기기 로컬(IndexedDB)에만 저장하고,
+   서버 전송이나 공유 기능은 두지 않으며, 글자당 최신 1개만 유지해 저장 용량을 관리합니다. */
+const VOICE_BOOKMARK_DB_NAME = 'kotobaVoiceBookmarkDB';
+const VOICE_BOOKMARK_STORE = 'recordings';
+let voiceBookmarkDbPromise = null;
+let activeVoiceRecording = null; // { ch, mediaRecorder, autoStopTimer }
+
+function openVoiceBookmarkDb() {
+  if (voiceBookmarkDbPromise) return voiceBookmarkDbPromise;
+  voiceBookmarkDbPromise = new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('IndexedDB 미지원')); return; }
+    const req = indexedDB.open(VOICE_BOOKMARK_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      // 글자(ch)당 녹음 1개만 보관 — 다시 녹음하면 put()이 자동으로 덮어씀
+      if (!db.objectStoreNames.contains(VOICE_BOOKMARK_STORE)) {
+        db.createObjectStore(VOICE_BOOKMARK_STORE, { keyPath: 'ch' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return voiceBookmarkDbPromise;
+}
+
+function saveVoiceBookmark(ch, blob) {
+  return openVoiceBookmarkDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(VOICE_BOOKMARK_STORE, 'readwrite');
+    tx.objectStore(VOICE_BOOKMARK_STORE).put({ ch, blob, ts: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+function loadVoiceBookmark(ch) {
+  return openVoiceBookmarkDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(VOICE_BOOKMARK_STORE, 'readonly');
+    const req = tx.objectStore(VOICE_BOOKMARK_STORE).get(ch);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function deleteVoiceBookmark(ch) {
+  return openVoiceBookmarkDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(VOICE_BOOKMARK_STORE, 'readwrite');
+    tx.objectStore(VOICE_BOOKMARK_STORE).delete(ch);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+/* 상세보기 렌더 시점엔 즉시 채울 수 없어(IndexedDB가 비동기) 자리만 먼저 그려두고,
+   showLtmDetail()이 box.innerHTML을 세팅한 직후 refreshVoiceBookmarkUI()를 호출해 내용을 채웁니다. */
+function renderVoiceBookmarkHtml(ch) {
+  return `
+    <div class="ltm-detail-voice" id="ltmVoiceBox-${ch}">
+      <div class="ltm-detail-voice-title">🎙️ 소리 도감 — 내 목소리로 녹음해서 비교해보기</div>
+      <div class="voice-body" id="ltmVoiceBody-${ch}">불러오는 중...</div>
+    </div>`;
+}
+
+function refreshVoiceBookmarkUI(ch) {
+  const bodyEl = document.getElementById('ltmVoiceBody-' + ch);
+  if (!bodyEl) return;
+  if (!(window.indexedDB && navigator.mediaDevices && window.MediaRecorder)) {
+    bodyEl.innerHTML = `<div class="voice-unsupported">이 기기/브라우저에서는 음성 녹음 기능을 지원하지 않아요.</div>`;
+    return;
+  }
+  loadVoiceBookmark(ch).then(record => {
+    bodyEl.innerHTML = renderVoiceBookmarkBodyHtml(ch, record);
+  }).catch(() => {
+    bodyEl.innerHTML = `<div class="voice-unsupported">녹음 정보를 불러오지 못했어요.</div>`;
+  });
+}
+
+function renderVoiceBookmarkBodyHtml(ch, record) {
+  if (!record) {
+    return `<button class="voice-record-btn" onclick="startVoiceBookmarkRecording('${ch}')">🎙️ 내 목소리로 녹음하기</button>`;
+  }
+  const daysAgo = Math.floor((Date.now() - record.ts) / SRS_MS_PER_DAY);
+  const agoText = daysAgo <= 0 ? '오늘 녹음했어요' : `${daysAgo}일 전 녹음했어요`;
+  return `
+    <div class="voice-compare-row">
+      <button class="voice-compare-btn" onclick="speakTTS('${ch}')">🔊 원어민 발음</button>
+      <button class="voice-compare-btn" onclick="playVoiceBookmark('${ch}')">🎤 내 발음</button>
+    </div>
+    <button class="voice-rerecord-btn" onclick="startVoiceBookmarkRecording('${ch}')">🔁 다시 녹음하기</button>
+    <button class="voice-rerecord-btn" onclick="deleteVoiceBookmarkAndRefresh('${ch}')">🗑️ 삭제</button>
+    <div class="voice-note">${agoText}</div>`;
+}
+
+/* 녹음 시작 — 아이가 짧게(글자 1개 발음 정도) 말하는 용도라 4초 뒤 자동으로 멈추되,
+   버튼을 다시 탭해 직접 멈출 수도 있게 합니다. 마이크 권한이 없거나 거부되면
+   앱 진행에는 지장 없이 안내 문구만 보여줍니다. */
+function startVoiceBookmarkRecording(ch) {
+  if (activeVoiceRecording) return;
+  const bodyEl = document.getElementById('ltmVoiceBody-' + ch);
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm'))
+      ? 'audio/webm' : '';
+    const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const chunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      activeVoiceRecording = null;
+      saveVoiceBookmark(ch, blob).then(() => refreshVoiceBookmarkUI(ch));
+    };
+    activeVoiceRecording = { ch, mediaRecorder, autoStopTimer: null };
+    mediaRecorder.start();
+    if (bodyEl) {
+      bodyEl.innerHTML = `<button class="voice-record-btn voice-record-btn-recording" onclick="stopVoiceBookmarkRecording()">🔴 녹음 중... (탭하면 멈춰요)</button>`;
+    }
+    activeVoiceRecording.autoStopTimer = setTimeout(() => stopVoiceBookmarkRecording(), 4000);
+  }).catch(() => {
+    if (bodyEl) bodyEl.innerHTML = `<div class="voice-unsupported">마이크 권한이 필요해요. 브라우저 설정에서 마이크 접근을 허용해주세요.</div>`;
+  });
+}
+
+function stopVoiceBookmarkRecording() {
+  if (!activeVoiceRecording) return;
+  clearTimeout(activeVoiceRecording.autoStopTimer);
+  try { activeVoiceRecording.mediaRecorder.stop(); } catch (e) { activeVoiceRecording = null; }
+}
+
+function playVoiceBookmark(ch) {
+  loadVoiceBookmark(ch).then(record => {
+    if (!record) return;
+    const url = URL.createObjectURL(record.blob);
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    audio.play().catch(() => {});
+  });
+}
+
+function deleteVoiceBookmarkAndRefresh(ch) {
+  deleteVoiceBookmark(ch).then(() => refreshVoiceBookmarkUI(ch));
+}
+
 function showLtmDetail(ch, status) {
+
+
   const box = document.getElementById('ltmDetailBox');
   if (!box) return;
   const now = Date.now();
@@ -1196,6 +1838,13 @@ function showLtmDetail(ch, status) {
   // 🌙 수면 의존 기억 공고화 — 오늘 이미 여러 번 반복했다면 안내(해당 없으면 빈 문자열)
   const sleepNoteHtml = computeSleepConsolidationNote(ch);
 
+  // 💭 정교화·자기참조 효과 — 이 글자를 나의 하루와 연결짓는 선택적 이모지 위젯
+  const selfRefHtml = renderSelfReferenceHtml(ch);
+
+  // 🎙️ 프로덕션 효과 — 내 목소리 녹음 비교(소리 도감). IndexedDB 조회가 비동기라
+  // 여기서는 자리만 그리고, box.innerHTML 반영 후 refreshVoiceBookmarkUI()로 채운다.
+  const voiceBookmarkHtml = renderVoiceBookmarkHtml(ch);
+
   box.innerHTML = `
     <div class="ltm-detail-header">
       <span class="ltm-detail-ch">${ch}</span>
@@ -1206,11 +1855,16 @@ function showLtmDetail(ch, status) {
     ${judgmentHtml}
     ${sampleWordsHtml}
     ${sleepNoteHtml}
+    ${selfRefHtml}
+    ${voiceBookmarkHtml}
   `;
   box.style.display = 'block';
+  refreshVoiceBookmarkUI(ch);
 }
 
 function closeLtmDetail() {
+  // 상세보기를 닫을 때 녹음 중이었다면 마이크 스트림을 정리(정지)한다
+  if (activeVoiceRecording) stopVoiceBookmarkRecording();
   const box = document.getElementById('ltmDetailBox');
   if (box) box.style.display = 'none';
 }
@@ -1599,6 +2253,9 @@ function buildGallery(){
 buildGallery();
 
 function switchMode(mode) {
+  // 🪜 §2 단계 판정 일반화 — 이번에 활성화되는 모드를 기록해, recordWordResult()가
+  // GAME_STAGE_MAP으로 B/C/D 채널을 구분할 수 있게 함
+  currentGameMode = mode;
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.mode-content').forEach(content => content.classList.remove('active'));
 
@@ -4007,6 +4664,65 @@ function replayShopQuestion() { shopGame.replay(); }
     DOM id는 `${idPrefix}Score`, `${idPrefix}Options` 처럼
     idPrefix + 고정 접미사 규칙을 따릅니다.)
    ============================================================ */
+/* 🍳 생성적 문장 조합 연출 (Part 3 §3) — 2단어 문장 맞히기(sentence)/합성어 맞추기(compound)
+   두 게임이 공유하는 createSequencePickQuizGame()의 판정 로직(pickPart)은 전혀 건드리지 않고,
+   "단어 재료를 냄비에 넣어 요리를 완성한다"는 연출만 얹습니다. 정답 여부·점수·타이머 계산에는
+   관여하지 않으므로, 이 3개 함수가 실패하거나 없어도 게임 진행에는 전혀 지장이 없습니다 */
+
+/* 정답 카드를 고를 때마다, 그 카드의 이모지가 화면 좌표를 따라 냄비 위치까지 날아가는
+   임시 요소를 만들었다가 애니메이션이 끝나면 지웁니다(실제 DOM 구조는 바꾸지 않음) */
+function playIngredientTossAnimation(buttonEl, potEl, emoji) {
+  if (!buttonEl || !potEl || !emoji) return;
+  try {
+    const startRect = buttonEl.getBoundingClientRect();
+    const endRect = potEl.getBoundingClientRect();
+    const flying = document.createElement('span');
+    flying.className = 'ingredient-toss';
+    flying.textContent = emoji;
+    flying.style.left = (startRect.left + startRect.width / 2) + 'px';
+    flying.style.top = (startRect.top + startRect.height / 2) + 'px';
+    const dx = (endRect.left + endRect.width / 2) - (startRect.left + startRect.width / 2);
+    const dy = (endRect.top + endRect.height / 2) - (startRect.top + startRect.height / 2);
+    flying.style.setProperty('--toss-dx', dx + 'px');
+    flying.style.setProperty('--toss-dy', dy + 'px');
+    document.body.appendChild(flying);
+    setTimeout(() => flying.remove(), 650);
+
+    // 재료가 도착하는 타이밍에 맞춰 냄비가 살짝 통통 튀는 리액션
+    potEl.classList.remove('cook-pot-bump');
+    void potEl.offsetWidth; // 리플로우를 강제해 같은 클래스를 다시 붙여도 애니메이션이 재생되게 함
+    potEl.classList.add('cook-pot-bump');
+  } catch (e) { /* 연출 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 두 재료가 모두 순서대로 맞아 "요리 완성"이 됐을 때, 냄비가 크게 한 번 통통 튀고
+   그 옆에 "냠냠(😋)" 리액션이 떠올랐다가 사라집니다. 기존 celebrateCorrect()의
+   풀스크린 축하 연출 위에 얹는 추가 액센트일 뿐, 판정 로직과는 무관합니다 */
+function playDishCompleteReaction(potEl) {
+  if (!potEl) return;
+  try {
+    potEl.classList.remove('cook-pot-bump');
+    void potEl.offsetWidth;
+    potEl.classList.add('cook-pot-complete');
+    setTimeout(() => potEl.classList.remove('cook-pot-complete'), 900);
+
+    const wrap = potEl.parentElement;
+    if (wrap) {
+      const bite = document.createElement('div');
+      bite.className = 'cook-bite-reaction';
+      bite.textContent = '😋';
+      wrap.appendChild(bite);
+      setTimeout(() => bite.remove(), 1200);
+    }
+  } catch (e) { /* 연출 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 새 문제로 넘어갈 때 냄비를 빈 상태(연출 클래스 없음)로 되돌립니다 */
+function resetCookPotVisual(potEl) {
+  if (!potEl) return;
+  potEl.classList.remove('cook-pot-bump', 'cook-pot-complete');
+}
+
 function createSequencePickQuizGame(cfg) {
   const P = cfg.idPrefix;
   const el = (suffix) => document.getElementById(P + suffix);
@@ -4065,6 +4781,7 @@ function createSequencePickQuizGame(cfg) {
     picked = [];
     el('AudioBtn').disabled = false;
     el('AnswerBox').style.display = 'none';
+    resetCookPotVisual(el('Pot')); // 🍳 생성적 문장 조합 연출 — 새 문제마다 냄비를 빈 상태로 되돌림
 
     const activeWords = getActiveWords();
     currentItem = cfg.buildItem(activeWords);
@@ -4132,6 +4849,7 @@ function createSequencePickQuizGame(cfg) {
       badge.textContent = picked.length;
       selectedButton.appendChild(badge);
       updateProgress();
+      playIngredientTossAnimation(selectedButton, el('Pot'), part.emoji); // 🍳 재료가 냄비로 날아 들어가는 연출(판정과 무관)
 
       if (picked.length < 2) {
         // 첫 번째 항목만 맞은 상태 — 계속 진행
@@ -4149,6 +4867,7 @@ function createSequencePickQuizGame(cfg) {
       comboEl.textContent = combo;
       playCorrectSound();
       cfg.celebrate(selectedButton, currentItem);
+      playDishCompleteReaction(el('Pot')); // 🍳 요리 완성 + 캐릭터가 냠냠 먹는 리액션(판정과 무관)
 
       el('AudioBtn').disabled = true;
       cfg.onCorrect(currentItem);
@@ -5849,6 +6568,7 @@ function createHiraganaStatsEngine(cfg) {
     if (isTimeout) stat.timeouts += amount;
     srsUpdateStat(stat, false);
     save();
+    logTodayLearned('char', ch, false); // 🌙 수면 전 통합 프롬프트용 오늘의 학습 로그
   }
 
   /* 정답: 정답 횟수를 amount만큼 올림 (기본 1) + SRS 단계를 1단계 올려
@@ -5858,6 +6578,7 @@ function createHiraganaStatsEngine(cfg) {
     stat.correct += amount;
     srsUpdateStat(stat, true);
     save();
+    logTodayLearned('char', ch, true); // 🌙 수면 전 통합 프롬프트용 오늘의 학습 로그
   }
 
   /* 답하기 전 스스로 예측한 "확실해요(confident)/헷갈려요(unsure)"와, 실제로 맞혔는지(wasCorrect)를
@@ -5887,7 +6608,7 @@ function createHiraganaStatsEngine(cfg) {
     const activeList = getActiveCharList();
 
     if (weightLevel === HS_WEIGHT_SRS_LEVEL) {
-      return srsWeightedPick(activeList, charStats, count);
+      return spaceOutConfusionGroups(srsWeightedPick(activeList, charStats, count));
     }
     if (weightLevel === HS_WEIGHT_ONLY_WRONG_LEVEL) {
       const onlyWrongList = activeList.filter(item => {
@@ -5905,7 +6626,7 @@ function createHiraganaStatsEngine(cfg) {
         result.push(...shuffled.slice(0, take));
         shuffled.sort(() => Math.random() - 0.5);
       }
-      return result;
+      return spaceOutConfusionGroups(result);
     }
 
     const multiplier = HS_WEIGHT_MULTIPLIERS[weightLevel] !== undefined ? HS_WEIGHT_MULTIPLIERS[weightLevel] : 2;
@@ -5930,7 +6651,7 @@ function createHiraganaStatsEngine(cfg) {
     while (result.length < count && activeList.length > 0) {
       result.push(activeList[Math.floor(Math.random() * activeList.length)]);
     }
-    return result;
+    return spaceOutConfusionGroups(result);
   }
 
   /* 게임 시작 화면에 46자를 오십음도 표 모양으로 배치하고, 글자별 정답/오답 횟수와
@@ -6002,7 +6723,7 @@ function createHiraganaStatsEngine(cfg) {
       result.push(...shuffled.slice(0, take));
       shuffled.sort(() => Math.random() - 0.5);
     }
-    return result;
+    return spaceOutConfusionGroups(result);
   }
 
   return {
@@ -6204,7 +6925,12 @@ function showHiraganaSpeedQuestion() {
   // 오답 선택지도 가급적 "지금 배우는 글자" 안에서 골라야 실제로 헷갈릴 만한 연습이 됩니다
   const activePool = getActiveCharList().filter(h => h.ch !== correct.ch);
   const pool = activePool.length >= (hsCardCount - 1) ? activePool : HIRAGANA_LIST.filter(h => h.ch !== correct.ch);
-  const shuffledPool = pool.slice().sort(() => Math.random() - 0.5);
+  // 🔀 간섭 방지: 정답과 자형이 비슷해 혼동군에 속하는 글자는 같은 문제의 선택지로
+  // 동시에 나오면 오히려 서로 헷갈려 뒤섞이기 쉬우므로 가급적 제외합니다.
+  // 다만 활성 세트가 작아 제외하면 선택지 수를 채울 수 없는 경우엔 원래 풀 그대로 씁니다.
+  const nonConfusingPool = pool.filter(h => !isSameConfusionGroup(h.ch, correct.ch));
+  const usablePool = nonConfusingPool.length >= (hsCardCount - 1) ? nonConfusingPool : pool;
+  const shuffledPool = usablePool.slice().sort(() => Math.random() - 0.5);
   const wrongOnes = shuffledPool.slice(0, hsCardCount - 1);
   const cards = [correct, ...wrongOnes].sort(() => Math.random() - 0.5);
 
@@ -7740,16 +8466,84 @@ function addLogChip(word) {
   }
 }
 
-/* 📊 단어별 정답/오답 통계 유틸 함수 (모든 게임 모드 공통 누적) */
+/* 📊 단어별 정답/오답 통계 유틸 함수 (모든 게임 모드 공통 누적) — localStorage에 저장되어
+   다음 방문에도 유지됨. loadWordStats()/saveWordStats()가 실제 입출력을 담당함 */
 function recordWordResult(word, isCorrect) {
   if (!word || !word.jp) return;
-  if (!wordStats[word.jp]) wordStats[word.jp] = { correct: 0, wrong: 0 };
+  if (!wordStats[word.jp]) wordStats[word.jp] = { correct: 0, wrong: 0, channels: {} };
+  if (!wordStats[word.jp].channels) wordStats[word.jp].channels = {};
   if (isCorrect) {
     wordStats[word.jp].correct += 1;
   } else {
     wordStats[word.jp].wrong += 1;
   }
+
+  // 🪜 §2 단계 판정 일반화 — 지금 실행 중인 게임 모드(currentGameMode)를 GAME_STAGE_MAP으로
+  // 조회해, 재인(B)/회상(C)/발화(D) 중 어느 채널에서 나온 결과인지 함께 누적함.
+  // A단계(듣기 전용) 게임이나 매핑에 없는 모드는 정오답 채널 기록 대상이 아니라 건너뜀.
+  const stage = getGameStage(currentGameMode);
+  if (stage === 'B' || stage === 'C' || stage === 'D') {
+    if (!wordStats[word.jp].channels[stage]) wordStats[word.jp].channels[stage] = { correct: 0, wrong: 0 };
+    if (isCorrect) wordStats[word.jp].channels[stage].correct += 1;
+    else wordStats[word.jp].channels[stage].wrong += 1;
+  }
+
+  saveWordStats();
   updateGalleryCardRate(word.jp);
+  logTodayLearned('word', word.jp, isCorrect, { kr: word.kr, emoji: word.emoji }); // 🌙 수면 전 통합 프롬프트용 오늘의 학습 로그
+}
+
+/* wordStats를 localStorage에서 불러옴/저장함 — hsStats/hwStats/hrStats의 load()/save()와 동일한 패턴 */
+function loadWordStats() {
+  try {
+    const raw = localStorage.getItem(WORD_STATS_KEY);
+    wordStats = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    wordStats = {};
+  }
+}
+
+function saveWordStats() {
+  try {
+    localStorage.setItem(WORD_STATS_KEY, JSON.stringify(wordStats));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 단어 하나가 지금 A~E 중 어느 단계에 있는지 판정 — computeCharGameStage(히라가나 축)를
+   단어 축으로 일반화한 버전. 히라가나처럼 SRS stage나 망각곡선까지는 아직 없어(§6(a) 1차
+   구현 범위), "어느 채널까지 시도해봤고 정확도가 어느 정도인가"만으로 단순 판정함:
+   - 기록 자체가 없으면 'A'(아직 안 만남)
+   - 회상(C)·발화(D) 채널 모두 시도했고 둘 다 정확도 70% 이상이면 'E'(유지·재맥락화)
+   - 발화(D) 채널을 시도한 적 있으면 'D'
+   - 회상(C) 채널을 시도한 적 있으면 'C'
+   - 그 외 재인(B) 채널만 시도했으면 'B' */
+function computeWordGameStage(jp) {
+  const stat = wordStats[jp];
+  if (!stat || (stat.correct + stat.wrong) === 0) return 'A';
+
+  const channels = stat.channels || {};
+  const attempted = (c) => !!c && (c.correct + c.wrong) > 0;
+  const accuracy = (c) => c.correct / (c.correct + c.wrong);
+
+  if (attempted(channels.D) && attempted(channels.C) &&
+      accuracy(channels.D) >= 0.7 && accuracy(channels.C) >= 0.7) {
+    return 'E';
+  }
+  if (attempted(channels.D)) return 'D';
+  if (attempted(channels.C)) return 'C';
+  return 'B';
+}
+
+/* 지금까지 한 번이라도 기록이 쌓인 단어들이 A~E에 얼마나 분포돼 있는지 집계 —
+   computeActiveSetStageDistribution()(히라가나 축)의 단어 축 버전. 히라가나와 달리
+   "활성 학습 세트" 개념이 아직 단어 쪽엔 없어서, 대신 실제로 한 번이라도 등장한
+   단어(Object.keys(wordStats))만 집계 대상으로 삼음 — 이 때문에 여기서는 'A'가
+   항상 0으로 나오는 게 정상(아직 안 만난 단어는 애초에 집계에 포함되지 않음) */
+function computeVocabStageDistribution() {
+  const jpList = Object.keys(wordStats);
+  const dist = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  jpList.forEach(jp => { dist[computeWordGameStage(jp)] += 1; });
+  return { dist, total: jpList.length };
 }
 
 function getWrongRate(jp) {
@@ -10091,6 +10885,11 @@ const TOP_MENU_EXTRA_ITEMS = [
     action: () => { openMenuPanel('menuLtmLevel'); renderLtmDashboard(); }
   },
   {
+    id: 'mistakeGarden', title: '오답 정원', emoji: '🌳',
+    desc: '복습할수록 씨앗이 새싹·꽃을 거쳐 나무로 무럭무럭 자라나요',
+    action: () => { openMenuPanel('menuMistakeGardenLevel'); renderMistakeGardenPanel(); }
+  },
+  {
     id: 'theory', title: '학습이론', emoji: '📚',
     desc: '이 앱에 적용된 장기기억 학습 이론과 기능을 그림으로 설명해요',
     action: () => openMenuPanel('menuTheoryLevel')
@@ -10109,6 +10908,22 @@ function getGameStage(mode) {
    고정되지 않으므로(복습 세트/재감상) 여기서 조회 대상이 아님. */
 function getModesForStage(stage) {
   return Object.keys(GAME_STAGE_MAP).filter(mode => GAME_STAGE_MAP[mode] === stage);
+}
+
+/* GAME_MODALITY_MAP(data.js) 조회 헬퍼 — learning-theory-roadmap.md Part 4 §2
+   (인출 단서 다변화). 매핑에 없는 모드는 null을 반환함. */
+function getGameModality(mode) {
+  return GAME_MODALITY_MAP[mode] || null;
+}
+
+/* 모달리티 객체({present, response})를 "🔊 소리로 듣고 고르기" 같은 한 줄 문구로 변환.
+   GAME_MODALITY_LABELS(data.js)를 조합함. modality가 없으면 빈 문자열 반환. */
+function formatGameModalityLabel(modality) {
+  if (!modality) return '';
+  const presentLabel = GAME_MODALITY_LABELS.present[modality.present] || '';
+  const responseLabel = GAME_MODALITY_LABELS.response[modality.response] || '';
+  if (!presentLabel && !responseLabel) return '';
+  return `${presentLabel} ${responseLabel}`.trim();
 }
 
 /* ============================================================
@@ -10182,7 +10997,11 @@ function pickNextGameForSession() {
 
   const { dist, total } = computeActiveSetStageDistribution();
   if (total === 0) {
-    return { stage: 'A', mode: 'exposure', tendency, reason: '아직 활성화된 글자가 없어요 — 가볍게 듣기부터 시작해봐요' };
+    return {
+      stage: 'A', mode: 'exposure', tendency,
+      reason: '아직 활성화된 글자가 없어요 — 가볍게 듣기부터 시작해봐요',
+      modalityText: formatGameModalityLabel(getGameModality('exposure'))
+    };
   }
 
   let worstStage = 'A';
@@ -10198,13 +11017,18 @@ function pickNextGameForSession() {
   if (worstStage === 'E') {
     return {
       stage: 'E', mode: null, useReviewSession: true, tendency,
-      reason: `이미 잘 아는 글자들을 새 맥락에서 다시 만나 "${stageLabel}"할 시간이에요`
+      reason: `이미 잘 아는 글자들을 새 맥락에서 다시 만나 "${stageLabel}"할 시간이에요`,
+      // 복습 세트 자체가 카드찾기·쓰기·읽기 3가지 모달리티를 매번 랜덤 순서로 섞어 진행하므로
+      // 고정된 모달리티 하나를 안내하는 대신 "여러 방식" 문구로 대체함(Part 4 §2)
+      modalityText: '🔁 여러 방식으로 번갈아 만나기'
     };
   }
 
+  const recommendedMode = STAGE_TO_HIRAGANA_MODE[worstStage];
   return {
-    stage: worstStage, mode: STAGE_TO_HIRAGANA_MODE[worstStage], tendency,
-    reason: `지금 배우는 글자 중 "${stageLabel}" 단계 비중이 목표보다 낮아요`
+    stage: worstStage, mode: recommendedMode, tendency,
+    reason: `지금 배우는 글자 중 "${stageLabel}" 단계 비중이 목표보다 낮아요`,
+    modalityText: formatGameModalityLabel(getGameModality(recommendedMode))
   };
 }
 
@@ -10227,6 +11051,10 @@ function renderTodayRecommendation() {
   const stageEmoji = { A: '👂', B: '🔍', C: '✍️', D: '🗣️', E: '🌱' };
   const stageLabel = rec.stage === 'E' ? '유지·재맥락화' : (GAME_STAGE_INFO[rec.stage] ? GAME_STAGE_INFO[rec.stage].label : rec.stage);
 
+  const modalityHtml = rec.modalityText
+    ? `<div class="today-recommend-modality">${rec.modalityText}</div>`
+    : '';
+
   banner.style.display = 'flex';
   banner.innerHTML = `
     <div class="today-recommend-body">
@@ -10234,6 +11062,7 @@ function renderTodayRecommendation() {
       <div class="today-recommend-text">
         <div class="today-recommend-title">오늘의 추천 · ${stageLabel}</div>
         <div class="today-recommend-desc">${rec.reason}</div>
+        ${modalityHtml}
       </div>
     </div>
     <button class="today-recommend-btn" onclick="startRecommendedGame()">지금 시작하기</button>
@@ -10252,7 +11081,7 @@ function startRecommendedGame() {
 }
 
 function hideAllMenuPanels(){
-  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel', 'menuTheoryLevel'].forEach(id => {
+  ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel', 'menuTheoryLevel', 'menuMistakeGardenLevel'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -10329,7 +11158,9 @@ function showTopMenu(){
   currentMenuCategoryId = null;
   hideAllMenuPanels();
   document.getElementById('menuTopLevel').style.display = 'block';
+  renderStreakBoard();
   renderTodayRecommendation();
+  renderPreSleepPrompt();
 }
 
 /* 게임을 고르면 기존 switchMode()로 해당 모드를 실제로 활성화한 뒤,
@@ -10421,12 +11252,15 @@ document.addEventListener('fullscreenchange', () => {
 
 /* 페이지 로드 시 연령대 라벨/버튼 상태를 실제 데이터와 동기화 */
 (function initAppLevelUI(){
+  loadWordStats(); // 🪜 §2 단계 판정 일반화 — 히라가나 밖 단어 통계도 이제 localStorage에서 불러옴
   const countEl = document.getElementById('ageLevelCount');
   if(countEl) countEl.innerHTML = `현재 <b>${getActiveWords().length}</b>개 단어 사용 중`;
   updateMatchGridAvailability();
   document.body.classList.toggle('gentle-mode', isGentleFeedbackMode());
   renderTopMenu();
+  renderStreakBoard();
   renderTodayRecommendation();
+  renderPreSleepPrompt();
 })();
 
 // PWA 설치/오프라인 지원을 위한 서비스워커 등록

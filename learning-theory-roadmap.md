@@ -73,6 +73,29 @@
 | `classifyLearnerTendency(profile)` | logic.js, 위와 동일 위치 | 진단 4개 필드로 'cautious'/'normal'/'fast' 3분류 판정 |
 | `pickNextGameForSession()` | logic.js, 위와 동일 위치 | §3 Phase 1 핵심 함수 — 목표 비율 대비 가장 부족한 단계의 게임을 추천 |
 | `renderTodayRecommendation()` / `startRecommendedGame()` | logic.js, 위와 동일 위치 | 추천 결과 UI 렌더 및 "지금 시작하기" 클릭 처리. `#todayRecommendBanner`(index.html) |
+| `wordStats` / `currentGameMode` | logic.js, `recordWordResult()` 근처 | §2 단계 판정 일반화(비-히라가나). `wordStats[jp] = {correct, wrong, channels:{B,C,D}}`, `localStorage` 키: `kotobaWordGameStats`(`loadWordStats()`/`saveWordStats()`). `currentGameMode`는 `switchMode()`가 매번 갱신하는 "지금 실행 중인 게임 모드" |
+| `computeWordGameStage(jp)` / `computeVocabStageDistribution()` | logic.js, `renderLtmDashboard()` 바로 다음 | `computeCharGameStage`/`computeActiveSetStageDistribution`의 단어 축 버전. 후자는 `Object.keys(wordStats)`만 집계 대상(아직 "활성 세트" 개념 없음) |
+| `renderVocabStageOverview()` | logic.js, `renderLtmDashboard()` 바로 다음 | 어휘 A~E 분포를 "장기기억 현황" 패널 하단(`#ltmVocabStageBox`, index.html)에 렌더링 |
+| `todayLearnedLog` / `logTodayLearned()` | logic.js, `computeSleepConsolidationNote()` 바로 다음 | Part 4 §3 수면 전 통합 프롬프트용 오늘의 학습 로그. `localStorage` 키: `kotobaTodayLearnedLog`(최근 30개, 날짜 바뀌면 자동 리셋). 히라가나 3채널 엔진의 `recordMistake`/`recordCorrect`와 `recordWordResult` 양쪽에서 호출됨 |
+| `renderPreSleepPrompt()` / `openPreSleepView()` | logic.js, `todayLearnedLog` 바로 다음 | 저녁 시간대(21시~새벽4시)에 메인 메뉴 상단 카드(`#preSleepBanner`)를 띄우고, 클릭 시 정오답 표시 없는 "1분 요약" 오버레이(`#preSleepViewOverlay`)를 보여줌. 닫으면 `kotobaPreSleepDismissedDay`에 오늘 날짜 저장 |
+| `GAME_MODALITY_MAP` / `GAME_MODALITY_LABELS` | data.js, `STAGE_TO_HIRAGANA_MODE` 바로 다음 | 인출 단서 다변화용. 게임 모드 34개(전부 `GAME_STAGE_MAP`과 동일 키) 각각을 `{present, response}` 모달리티로 재분류. `GAME_STAGE_MAP`과 별도 맵으로 분리(기존 값 비교 호출부 보호) |
+| `getGameModality(mode)` / `formatGameModalityLabel(modality)` | logic.js, `getModesForStage()` 바로 다음 | `GAME_MODALITY_MAP` 조회 + "🔊 소리로 고르기" 형태의 표시 문구 조합. `pickNextGameForSession()`의 `modalityText` 필드와 "오늘의 추천" 배너(`.today-recommend-modality`)에서 사용 |
+| `HIRAGANA_CONFUSION_GROUPS` | data.js, `HS_COL_HEADS` 바로 다음 | 자형이 비슷해 흔히 헷갈리는 히라가나 10묶음(청킹 행과 무관, 순수 자형 유사성 기준) |
+| `isSameConfusionGroup(chA, chB)` / `spaceOutConfusionGroups(list)` | logic.js, `srsWeightedPick()` 바로 위 | 두 글자가 같은 혼동군인지 판별 / 이미 뽑힌 문제 순서를 "누가 뽑혔는지는 유지, 순서만" 재배치해 혼동군 연속 등장을 줄임. `createHiraganaStatsEngine()`의 `weightedPick`/`pickFromSubset`(hs/hw/hr 3개 엔진 공용) 반환 직전에 적용 |
+| `SELF_REFERENCE_EMOJI_OPTIONS` / `SELF_REFERENCE_NOTES_KEY` | logic.js, `showLtmDetail()` 바로 위 | 정교화·자기참조 효과용. 이모지 5개 후보 배열과 `localStorage` 키(`kotobaSelfReferenceNotes`, `{ch: emoji}` 형태) |
+| `loadSelfReferenceNotes()` / `saveSelfReferenceNotes(notes)` | logic.js, 위와 동일 위치 | 자기참조 메모 로드/저장(글자별 선택 이모지 1개). 매 호출마다 `localStorage`를 직접 읽고 쓰는 무상태 헬퍼(전역 캐시 없음) |
+| `renderSelfReferenceHtml(ch)` / `toggleSelfReferenceEmoji(ch, emoji)` | logic.js, 위와 동일 위치 | 장기기억 상세보기용 이모지 선택 위젯 렌더 / 클릭 시 선택·취소 토글 처리(같은 이모지 다시 누르면 취소). `showLtmDetail()`이 렌더 시 호출, 클릭 시 `#ltmSelfRefBox-{ch}`만 `outerHTML` 교체 |
+| `MISTAKE_GARDEN_STAGES` / `MISTAKE_GARDEN_LAST_TIERS_KEY` | logic.js, `renderVocabStageOverview()` 바로 다음 | 오답 정원용. 씨앗(0)·새싹(1~2)·꽃(3~4)·나무(5~7) 4구간 정의와 `localStorage` 키(`kotobaMistakeGardenLastTiers`, `{ch: tierIndex}` 형태, 성장 애니메이션 비교용) |
+| `streakState` / `STREAK_KEY` | logic.js, `logTodayLearned()` 바로 다음 | 스트릭(출석 도장판)용 상태 `{lastVisitCalendarDay, currentStreak, longestStreak}`. `localStorage` 키: `kotobaStreak` |
+| `recordStreakActivity()` | logic.js, 위와 동일 위치 | 오늘 학습 활동(정답/오답 기록)이 하나라도 생길 때마다 `logTodayLearned()` 내부에서 호출됨. 오늘 이미 반영했으면 무시, 어제까지 연속이면 +1, 하루 이상 끊겼으면 1부터 재시작 |
+| `getDisplayStreak()` / `renderStreakBoard(animateFreshStamp)` | logic.js, 위와 동일 위치 | 화면에 보여줄 "유효한" 스트릭 계산(끊긴 지 이틀 이상이면 0으로 표시, 저장값 자체는 건드리지 않음)과 최근 7일 도장판 렌더. `showTopMenu()`/앱 최초 로드 시 호출됨. `#streakBoard`(index.html) |
+| `playIngredientTossAnimation(buttonEl, potEl, emoji)` / `playDishCompleteReaction(potEl)` / `resetCookPotVisual(potEl)` | logic.js, `createSequencePickQuizGame()` 바로 위 | 생성적 문장 조합 연출용. sentence/compound 두 게임이 공유하는 `pickPart()`/`generateQuiz()`에서 호출됨. 판정 로직과 무관한 순수 연출(재료가 냄비로 날아감 / 완성 시 냠냠 리액션 / 새 문제 시작 시 초기화). `#sentencePot`/`#compoundPot`(index.html) |
+| `renderMistakeGardenPanel()` | logic.js, 위와 동일 위치 | "오답 정원" 패널 렌더. `hwStats`(쓰기/회상 채널)의 `srsStage`만으로 판정하며, 직전 방문보다 자란 글자는 `mg-grew` 클래스로 강조 |
+| `VOICE_BOOKMARK_DB_NAME`/`VOICE_BOOKMARK_STORE` | logic.js, `showLtmDetail()` 바로 위 | §Part3-1 소리 도감(프로덕션 효과)용 IndexedDB(`kotobaVoiceBookmarkDB`, 스토어 `recordings`, keyPath `ch`). 글자당 최신 녹음 1개만 `put()`으로 덮어써 보관 |
+| `saveVoiceBookmark(ch, blob)` / `loadVoiceBookmark(ch)` / `deleteVoiceBookmark(ch)` | logic.js, 위와 동일 위치 | 녹음 Blob 저장/조회/삭제(모두 Promise 반환) |
+| `renderVoiceBookmarkHtml(ch)` / `refreshVoiceBookmarkUI(ch)` / `renderVoiceBookmarkBodyHtml(ch, record)` | logic.js, 위와 동일 위치 | 상세보기 위젯 렌더. IndexedDB 조회가 비동기라 `showLtmDetail()`이 `box.innerHTML` 반영 직후 `refreshVoiceBookmarkUI()`를 별도 호출해 내용을 채움 |
+| `startVoiceBookmarkRecording(ch)` / `stopVoiceBookmarkRecording()` | logic.js, 위와 동일 위치 | `MediaRecorder`로 녹음 시작(4초 자동 정지 또는 버튼으로 직접 정지)/정지. 마이크 권한 거부 시 안내 문구만 표시, 앱 진행에는 영향 없음 |
+| `playVoiceBookmark(ch)` / `deleteVoiceBookmarkAndRefresh(ch)` | logic.js, 위와 동일 위치 | 저장된 녹음 재생(`URL.createObjectURL`) / 삭제 후 위젯 갱신 |
 
 ### 이미 구현된 이론 (참고용, 재구현 불필요)
 1. 에빙하우스 망각곡선 (`srsForgetProbability`)
@@ -88,6 +111,11 @@
 11. **수면 의존 기억 공고화 — 같은 날 중복 상승 제한** (`calendarDayNumber`, `srsUpdateStat`의 `sameDayCorrectCount` 체크) ✅ 구현됨
 12. **부호화 다양성 — 폰트/음성 변주** (`pickCharFontVariant`, `speakTTS`의 `jitter` 옵션) ✅ 구현됨
 13. **§3 오케스트레이터 Phase 1 — 오늘의 추천(히라가나 축 한정)** (`computeCharGameStage`, `classifyLearnerTendency`, `pickNextGameForSession`) ✅ 구현됨
+14. **정교화·자기참조 효과 — "나의 하루와 닮은 점" 이모지 선택** (`renderSelfReferenceHtml`, `toggleSelfReferenceEmoji`) ✅ 구현됨
+15. **오답 나무 키우기 — 복습 이행 유도 정원 UI** (`MISTAKE_GARDEN_STAGES`, `renderMistakeGardenPanel`) ✅ 구현됨
+16. **프로덕션 효과 — 소리 도감(내 목소리 녹음 비교)** (`saveVoiceBookmark`/`loadVoiceBookmark`, `startVoiceBookmarkRecording`) ✅ 구현됨
+17. **습관 형성 — 스트릭/출석 도장판** (`recordStreakActivity`, `renderStreakBoard`, `kotobaStreak`) ✅ 구현됨
+18. **생성 효과 — 생성적 문장 조합 연출(요리 비유)** (`playIngredientTossAnimation`, `playDishCompleteReaction`) ✅ 구현됨
 
 ---
 
@@ -658,7 +686,17 @@
 3. ~~§1 진단 모듈 중 2번(작업기억 스팬)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `workingMemorySpan`까지 채워짐
 4. ~~§1 진단 모듈 중 3번(연상학습 속도)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `assocLearningRate`까지 채워짐. **이로써 §1 진단 모듈 4가지가 모두 구현 완료됨.**
 5. ~~§2의 게임→단계 매핑 표를 `data.js`에 `GAME_STAGE_MAP`으로 옮기는 작업~~ ✅ 완료(`GAME_STAGE_MAP`/`GAME_STAGE_INFO` + 조회 헬퍼 `getGameStage`/`getModesForStage`). **다음은 §3 오케스트레이터 Phase 1(규칙 기반)을 시작할 차례** — 그 첫 작업은 §2에서 미룬 "항목별 단계 이동 규칙"(카테고리별 정답/오답 채널 기록 → 다음 단계 진입 판정)을 `pickNextGameForSession()`과 함께 설계하는 것부터.
-6. ~~§3은 반드시 Phase 1(규칙 기반)만 먼저~~ ✅ 구현 완료 — `pickNextGameForSession()`이 진단 4개 필드를 `classifyLearnerTendency()`로 연결하고, 히라가나 축 한정으로 "오늘의 추천" 배너까지 UI 연동됨. **Phase 2(성과 기반 재보정)/Phase 3(주간 커리큘럼)는 Phase 1이 실제로 며칠 굴러가며 데이터가 쌓인 뒤 재검토할 것.** 다음 세션 후보: (a) 비-히라가나 게임 카테고리로 §2 단계 판정 일반화, (b) Part 3/Part 4에 정리된 신규 아이디어(오답 나무, 소리 도감, 수면 전 프롬프트 등) 순차 구현.
+6. ~~§3은 반드시 Phase 1(규칙 기반)만 먼저~~ ✅ 구현 완료 — `pickNextGameForSession()`이 진단 4개 필드를 `classifyLearnerTendency()`로 연결하고, 히라가나 축 한정으로 "오늘의 추천" 배너까지 UI 연동됨. **Phase 2(성과 기반 재보정)/Phase 3(주간 커리큘럼)는 Phase 1이 실제로 며칠 굴러가며 데이터가 쌓인 뒤 재검토할 것.**
+   - ~~(a) 비-히라가나 게임 카테고리로 §2 단계 판정 일반화~~ ✅ 구현 완료(재구현 세션):
+     - `logic.js`: `wordStats`(모든 게임 공통 단어별 정답/오답 통계)를 기존 세션 한정 인메모리 객체에서 `localStorage`(`kotobaWordGameStats`, `loadWordStats()`/`saveWordStats()`) 영속 저장으로 전환. 히라가나의 hsStats/hwStats/hrStats 3채널 구조를 일반화하기 위해, 각 단어별로 `channels:{B,C,D}` 하위 통계를 신설.
+     - 신규 전역 `currentGameMode`: `switchMode(mode)` 진입 시마다 갱신되어, 지금 실행 중인 게임 모드를 기억함.
+     - `recordWordResult(word, isCorrect)`: 기존 `correct`/`wrong` 누적은 그대로 두고, `currentGameMode`를 `getGameStage()`(GAME_STAGE_MAP 조회)로 B/C/D 중 하나로 판별해 해당 채널에도 함께 누적하도록 확장. A단계(듣기 전용)나 매핑에 없는 모드는 채널 기록 대상 아님.
+     - `computeWordGameStage(jp)`(신규, `computeCharGameStage`의 단어 축 버전): 기록이 없으면 'A', D·C 채널 모두 시도했고 둘 다 정확도 70% 이상이면 'E', D 채널 시도 이력 있으면 'D', C 채널 시도 이력 있으면 'C', 그 외 'B'.
+     - `computeVocabStageDistribution()`(신규, `computeActiveSetStageDistribution`의 단어 축 버전): `Object.keys(wordStats)`(실제로 한 번이라도 등장한 단어)만 집계 대상으로 A~E 분포 산출. 히라가나처럼 "활성 세트" 개념이 아직 단어 쪽엔 없어 대신 이 방식으로 근사함 — 그래서 여기선 'A'가 항상 0으로 나오는 게 정상.
+     - `renderVocabStageOverview()`(신규): `renderLtmDashboard()`에서 함께 호출되어 "장기기억 현황" 패널 하단에 어휘 A~E 분포 칩을 렌더링.
+     - `index.html`: `#menuLtmLevel` 패널 맨 아래에 `.ltm-vocab-stage-box`(헤더+분포 칩 행+설명) 신규 추가, 디자인 시스템 CSS 변수 재사용.
+     - **아직 미반영(다음 세션 후보)**: §3 오케스트레이터(`pickNextGameForSession`)는 여전히 히라가나 축 전용이라, 이번에 만든 어휘 축 A~E 분포는 아직 "오늘의 추천" 배너 로직에는 연결되지 않음(현황 표시까지만). 어휘 축에도 SRS stage/망각곡선을 도입해 `srsForgetProbability` 수준으로 정교화하는 것도 남은 과제.
+   - (b) Part 3/Part 4에 정리된 신규 아이디어(오답 나무, 소리 도감, 수면 전 프롬프트 등) 순차 구현 — 아직 미착수.
 7. §4-1 미니 롤플레이는 오케스트레이터와 독립적으로 먼저 프로토타입을 만들어봐도 무방 — 시나리오 1~2개로 작게 시작해서 대사 풀 다양화 패턴부터 검증할 것
 
 ---
@@ -677,7 +715,40 @@
 >
 > 아직 코드는 하나도 없고, 순수 기획 문서다. 실제 구현 세션은 이 문서를 갱신하며 작업할 것(기존 규칙과 동일).
 
-## 1. 프로덕션 효과 — 소리 도감 / 자기 음성 녹음 비교
+## 1. 프로덕션 효과 — 소리 도감 / 자기 음성 녹음 비교 ✅ 구현 완료
+
+> **구현 내역**: 이전 세션에서 `index.html`에 CSS(`.ltm-detail-voice` 등)와 "학습이론" 패널
+> 설명 카드(16번, "소리 도감 — 내가 낸 소리는 더 오래 남아요")까지만 먼저 작성되고
+> `logic.js` 쪽 실제 로직 연결이 누락된 채로 세션이 끊겨 있었음. 이번 세션에서 그 누락된
+> `logic.js` 구현을 완료함.
+> - `logic.js`: `showLtmDetail()` 바로 위에 IndexedDB 기반 저장소(`VOICE_BOOKMARK_DB_NAME` =
+>   `kotobaVoiceBookmarkDB`, 스토어 `recordings`, keyPath `ch`)와 `saveVoiceBookmark`/
+>   `loadVoiceBookmark`/`deleteVoiceBookmark`(모두 Promise 반환) 신규 추가. `localStorage`
+>   대신 IndexedDB를 택한 이유는 오디오 Blob을 다루기 위함(로드맵 원안의 "용량이 크면
+>   IndexedDB" 조건 반영). `put()`이 같은 `ch` 키를 덮어써 글자당 최신 녹음 1개만 유지.
+> - `renderVoiceBookmarkHtml(ch)`(자리표시자 렌더) / `refreshVoiceBookmarkUI(ch)`(IndexedDB
+>   조회 후 실제 내용 채움) / `renderVoiceBookmarkBodyHtml(ch, record)`(녹음 유무별 버튼 HTML)
+>   3개 함수로 분리 — IndexedDB 조회가 비동기라 `showLtmDetail()`이 `box.innerHTML`을 먼저
+>   반영한 직후 `refreshVoiceBookmarkUI(ch)`를 별도 호출하는 2단계 렌더 방식을 사용함
+>   (기존 `renderSelfReferenceHtml`처럼 완전 동기로는 불가능했기 때문).
+> - `startVoiceBookmarkRecording(ch)`: `getUserMedia({audio:true})` → `MediaRecorder` 녹음
+>   시작, 아이가 멈추는 걸 잊어도 4초 뒤 자동 정지(`stopVoiceBookmarkRecording()`), 버튼을
+>   다시 눌러 직접 멈출 수도 있음. 마이크 권한 거부/미지원 브라우저는 안내 문구만 보여주고
+>   앱 다른 기능에는 영향 없음(`voice-unsupported` 문구).
+> - `playVoiceBookmark(ch)`: 저장된 Blob을 `URL.createObjectURL`로 재생, "🔊 원어민 발음"
+>   버튼은 기존 `speakTTS(ch)`를 그대로 재사용(신규 로직 없음).
+> - `showLtmDetail(ch, status)` 상세보기 HTML 맨 끝(자기참조 위젯 다음)에 위젯을 이어붙이고,
+>   렌더 직후 `refreshVoiceBookmarkUI(ch)` 호출. `closeLtmDetail()`에는 상세보기를 닫을 때
+>   녹음 중이었다면 `stopVoiceBookmarkRecording()`으로 마이크 스트림을 정리하는 코드 추가.
+> - `index.html`: CSS는 이전 세션에서 대부분 준비돼 있었고, 이번 세션엔 문서에서 참조하지만
+>   빠져 있던 `.voice-note`(녹음 시점 안내 문구) 클래스만 추가로 보완함.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v27` → `koe-app-v28`로 올림.
+> - **미구현으로 남긴 것**: 로드맵 원안의 "`hrStats.getStat(ch)`에 `hasVoiceBookmark` 플래그를
+>   얹어 장기기억 판정 참고 정보로 노출"은 하지 않음 — 통계 엔진 내부 객체 구조를 건드리면
+>   저장/불러오기(`localStorage` 직렬화) 전반에 회귀 리스크가 생기는 데 비해, 위젯 자체가
+>   이미 녹음 유무·날짜를 직접 보여주고 있어 별도 플래그 없이도 정보 전달 목적은 달성된다고
+>   판단함. 필요해지면(예: 장기기억 등급 표시줄에 🎙️ 아이콘 추가 등) 다음 세션에서 별도로
+>   검토 권장.
 
 **개념**: 정보를 눈으로 보거나 귀로 듣기만 할 때보다, 스스로 소리 내어 산출(production)한 정보가 더 오래 기억됨(production effect). 원어민 음성과 자신의 발음을 나란히 비교해 들으면 산출 과정 자체가 한 번 더 인출 연습이 됨.
 
@@ -690,9 +761,9 @@
 - 인출 강도를 높이려면 저장 시점에 이미 있는 `hrStats.getStat(ch)`에 `hasVoiceBookmark` 플래그만 살짝 얹어 장기기억 판정에 참고 정보로만 노출(가중치에는 영향 주지 않는 것을 권장 — 녹음 여부가 실력을 뜻하진 않으므로)
 - **연동 지점**: `showLtmDetail()`, 읽기(발화) 게임 결과 화면(`showHiraganaReadQuestion` 계열), 신규 `localStorage` 키
 
-**우선순위**: 높음 (LTM 채널 중 유일하게 비어 있던 "자기 산출 저장" 축을 채움)
-**난이도**: 중 (MediaRecorder 브라우저 호환성, 마이크 권한 UX, 저장 용량 관리 필요)
-**주의사항**: 아이 음성 녹음은 민감할 수 있으므로 기기 로컬 저장만 하고 서버 전송/공유 기능은 넣지 않을 것. 저장 용량 상한(예: 글자당 최신 1개만 유지)을 반드시 둘 것.
+**우선순위**: 높음 (완료 — LTM 채널 중 유일하게 비어 있던 "자기 산출 저장" 축을 채움)
+**난이도**: 중 (완료 — IndexedDB 기반 저장, 마이크 권한 실패 시 안내 문구로 우회)
+**주의사항**: 아이 음성 녹음은 민감할 수 있으므로 기기 로컬 저장만 하고 서버 전송/공유 기능은 넣지 않을 것. 저장 용량 상한(예: 글자당 최신 1개만 유지)을 반드시 둘 것. → 구현도 이 원칙대로 IndexedDB 로컬 저장만 하고, `put()` 덮어쓰기로 글자당 1개만 유지함.
 
 ---
 
@@ -715,7 +786,29 @@
 
 ---
 
-## 3. 생성적 문장 조합 미니게임 (단어 재료 → 문장 요리)
+## 3. 생성적 문장 조합 미니게임 (단어 재료 → 문장 요리) ✅ 구현 완료
+
+> **구현 내역**: 로드맵 원안의 "드래그" 방식 대신, 기존 클릭 선택(`pickPart`) 흐름은 그대로 두고
+> 클릭 순간의 화면 좌표를 기준으로 "재료가 날아 들어간다"는 연출을 얹는 방식으로 구현함(터치
+> 환경에서 드래그보다 클릭이 이미 잘 작동하고 있어 입력 방식 자체는 바꾸지 않는 게 안전하다고 판단).
+> - `logic.js`: `createSequencePickQuizGame()` 바로 위에 `playIngredientTossAnimation(buttonEl, potEl, emoji)`,
+>   `playDishCompleteReaction(potEl)`, `resetCookPotVisual(potEl)` 3개 신규 함수 추가. sentence/compound
+>   두 게임이 공유하는 `pickPart()`(정답 선택 시)와 `generateQuiz()`(새 문제 시작 시)에서 호출됨 —
+>   **판정 로직(정답 비교, 점수, 콤보, 타이머, SRS 기록)은 한 줄도 건드리지 않음**, 함수 호출 추가만 함.
+> - **연동 지점**: `pickPart()`에서 정답 카드를 고를 때마다(1번째·2번째 모두) `playIngredientTossAnimation()`
+>   호출 → 카드의 이모지가 냄비 위치까지 날아가는 임시 요소 생성 후 자동 제거. 두 재료가 모두 맞으면
+>   기존 `cfg.celebrate()`(풀스크린 축하) 바로 다음 줄에 `playDishCompleteReaction()`을 추가로 호출해
+>   냄비가 크게 튀며 "😋" 리액션이 떠오름. `generateQuiz()` 시작 시 `resetCookPotVisual()`로 냄비를
+>   빈 상태로 되돌림.
+> - `index.html`: sentence/compound 두 게임 화면의 기존 `.sentence-progress`(정답 순서 표시줄)를
+>   `.sentence-progress-row`로 감싸고 옆에 `.cook-pot-wrap > .cook-pot`(냄비 이모지, id는
+>   `sentencePot`/`compoundPot`) 신규 추가. `.ingredient-toss`/`.cook-pot-bump`/`.cook-pot-complete`/
+>   `.cook-bite-reaction` CSS와 `ingredientTossFly`/`cookPotBump`/`cookPotComplete`/`cookBitePop`
+>   키프레임 애니메이션 신규 추가. "학습이론" 패널에 18번째 카드(생성적 문장 조합 연출, Generation
+>   Effect) 신규 추가, 상단 안내 문구 "17가지" → "18가지"로 갱신.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v29` → `koe-app-v30`으로 올림.
+> - **미구현으로 남긴 것(의도적 범위 축소)**: 로드맵 원안의 "드래그" 인터랙션 자체는 만들지 않음
+>   (클릭 좌표 기반 연출로 대체, 위 설명 참고). 타이밍/억양 정밀 비교 같은 확장도 이번 범위 밖.
 
 **개념**: 이미 아는 단어를 스스로 조합해 새 문장을 만드는 과정은 처리 수준 이론에서 말하는 "의미적·생성적 부호화"에 해당해, 완성된 문장을 보기만 하는 것보다 기억에 오래 남음.
 
@@ -726,13 +819,41 @@
 - 기존 판정 로직을 건드리지 않는 것이 핵심 — 새 함수보다는 기존 완성 콜백 지점에 연출 트리거만 추가
 - **연동 지점**: `sentence`/`compound` 게임의 완성 판정 콜백 지점(logic.js에서 해당 함수 검색 필요), CSS 애니메이션 신규 추가
 
-**우선순위**: 낮음~중 (인지적 이득은 기존 게임과 동일 — 주로 동기부여/지속 참여 효과이지만, 생성 자체의 참여도를 높여 결과적으로 인출 연습 반복 횟수를 늘리는 간접 효과 기대)
-**난이도**: 낮음 (판정 로직 변경 없이 연출만 추가)
-**주의사항**: 연출에 시간을 쏟다가 판정 로직을 실수로 건드리지 않도록 주의 — 기존 `sentence`/`compound` 회귀 테스트 필수.
+**우선순위**: 낮음~중 (완료 — 인지적 이득은 기존 게임과 동일, 주로 동기부여/지속 참여 효과)
+**난이도**: 낮음 (완료 — 판정 로직 변경 없이 연출 함수 호출만 추가)
+**주의사항**: 연출에 시간을 쏟다가 판정 로직을 실수로 건드리지 않도록 주의 — 기존 `sentence`/`compound` 회귀 테스트 필수. 구현도 이 원칙대로 기존 `pickPart`/`generateQuiz`의 기존 코드는 삭제·수정 없이 호출 추가만 함.
 
 ---
 
-## 4. 오답 나무 키우기 — 복습 이행 유도 UI
+## 4. 오답 나무 키우기 — 복습 이행 유도 UI ✅ 구현 완료
+
+> **구현 내역**: 로드맵 원안대로 새 판정 로직 없이 기존 `srsStage`를 그대로 재사용함.
+> - `logic.js`: `renderVocabStageOverview()` 바로 다음에 `MISTAKE_GARDEN_STAGES`(씨앗 0단계·새싹
+>   1~2단계·꽃 3~4단계·나무 5~7단계 4구간), `MISTAKE_GARDEN_LAST_TIERS_KEY`(`localStorage` 키:
+>   `kotobaMistakeGardenLastTiers`), `loadMistakeGardenLastTiers()`/`saveMistakeGardenLastTiers()`,
+>   `renderMistakeGardenPanel()` 신규 추가. **판정 기준은 `hwStats`(쓰기/회상 채널)의 `srsStage`만
+>   사용** — `computeLtmStatus()`와 동일하게 회상이 재인보다 엄격한 증거라는 원칙을 그대로 따름.
+> - `renderMistakeGardenPanel()`은 `HS_TABLE_ROWS`/`HS_COL_HEADS`를 재사용해 기존 장기기억
+>   현황판과 동일한 46자 그리드 레이아웃으로 그리되, 칸 안쪽은 4단계 식물 이모지+글자로 표시.
+>   패널을 열 때마다 직전 방문 시점의 단계(`kotobaMistakeGardenLastTiers`)와 비교해서 **이번에
+>   더 자란 글자만** `mg-grew` 클래스로 짧게 튀어오르는 애니메이션을 줌(별도 "물주기" 트리거
+>   콜백을 복습 세트 완료 지점에 걸지 않고, 패널을 열 때 비교하는 더 단순하고 회귀 리스크가
+>   낮은 방식을 택함). 렌더 직후 이번 방문의 단계를 다음 비교 기준으로 저장.
+> - "🔁 물 주러 가기" 버튼은 신규 로직을 만들지 않고 **기존 `startReviewSession()`을 그대로 호출**.
+> - `index.html`: `#menuLtmLevel`과 `#menuTheoryLevel` 사이에 `#menuMistakeGardenLevel` 패널
+>   신규 추가(요약 칩 4개 + 그리드 + 복습 세트 시작 버튼, `.video-desc`/`.ltm-summary-row`/
+>   `.ltm-review-launch`/`.hs-stat-grid` 등 기존 클래스 재사용). `.mg-stat-cell`/`.mg-cell-emoji`/
+>   `.mg-cell-ch`/`.mg-tier-0~3`/`.mg-grew`(+`@keyframes mgGrewPulse`) CSS 신규 추가. 게임
+>   전체화면 시 숨기는 `body.game-fullscreen` 선택자 목록에도 새 패널 추가.
+> - `logic.js`: `hideAllMenuPanels()` 배열과 `TOP_MENU_EXTRA_ITEMS`에 "🌳 오답 정원" 카드
+>   (`openMenuPanel('menuMistakeGardenLevel')` + `renderMistakeGardenPanel()`) 신규 등록.
+>   "학습이론" 패널에 오답 정원 설명 카드(15번) 신규 추가, 상단 안내 문구 "14가지" → "15가지"로 갱신.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v26` → `koe-app-v27`로 올림.
+> - **미구현으로 남긴 것**: 로드맵 원안의 "복습 세트에서 맞히는 즉시 물주기 애니메이션"은
+>   `startReviewSession`/`playNextReviewRound` 내부에 훅을 거는 대신, 패널을 열 때 직전 방문과
+>   비교하는 방식으로 단순화함 — 기존 복습 게임 3종(카드찾기/쓰기/읽기)의 정답 처리 콜백을
+>   전부 건드리지 않아 회귀 리스크가 훨씬 낮음. 실시간 애니메이션이 꼭 필요하면 다음 세션에서
+>   `hwRecordCorrect`류 호출 지점에 별도 훅을 추가하는 방향으로 확장 가능.
 
 **개념**: 이 항목 자체는 새로운 기억 메커니즘이 아니라, **이미 구현된 SRS/복습 세트(`srsForgetProbability`, `startReviewSession`)가 실제로 수행되게 만드는 행동 유도 장치**임. 망각곡선 기반 모델은 복습이 실제로 일어나야 의미가 있으므로, 복습 이행률을 높이는 UI는 간접적이지만 실질적인 LTM 개선 효과가 있음.
 
@@ -743,13 +864,42 @@
 - 복습 세트(`startReviewSession`)에서 해당 글자를 맞히면 "물주기" 애니메이션과 함께 단계 상승 — **기존 `srsUpdateStat`의 stage 값을 그대로 재사용**(새 별도 상태를 만들지 않고 기존 stage를 시각적으로 매핑만 다시 하는 방식을 권장, 데이터 이중관리 방지)
 - **연동 지점**: `computeLtmStatus`/`getStat` (기존 stage 값 조회), `startReviewSession` 완료 콜백, `TOP_MENU_EXTRA_ITEMS`(신규 메뉴 카드 등록)
 
-**우선순위**: 높음 (기존 통계 데이터를 그대로 재사용해 새 정원 UI만 얹으면 되고, 복습 이행 동기부여 효과가 커서 구현 비용 대비 효과가 좋음)
-**난이도**: 낮음~중 (판정 로직 재사용, 시각화 UI만 신규)
-**주의사항**: "틀린 것"을 부정적으로 느끼지 않도록 톤을 "키운다"는 긍정적 프레임으로 유지 — 오답 자체를 벌점처럼 보이게 하지 말 것.
+**우선순위**: 높음 (완료 — 기존 통계 데이터를 그대로 재사용해 새 정원 UI만 얹으면 되고, 복습 이행 동기부여 효과가 커서 구현 비용 대비 효과가 좋음)
+**난이도**: 낮음~중 (완료 — 판정 로직은 `hwStats.srsStage` 그대로 재사용, 시각화 UI와 성장 비교 로직만 신규)
+**주의사항**: "틀린 것"을 부정적으로 느끼지 않도록 톤을 "키운다"는 긍정적 프레임으로 유지 — 오답 자체를 벌점처럼 보이게 하지 말 것. 구현도 이 원칙에 맞춰 색상·문구를 전부 긍정적 성장 표현으로 통일함.
 
 ---
 
-## 5. 스트릭 / 출석 도장판 — 학습 습관 형성
+## 5. 스트릭 / 출석 도장판 — 학습 습관 형성 ✅ 구현 완료
+
+> **구현 내역**: 로드맵 원안 그대로 배지/테마 해금은 1차 범위에서 제외하고, 스트릭 표시 자체만 구현함.
+> - `logic.js`: `logTodayLearned()` 바로 다음에 `STREAK_KEY`(`localStorage` 키: `kotobaStreak`),
+>   `streakState`(`{lastVisitCalendarDay, currentStreak, longestStreak}`), `loadStreakState()`/
+>   `saveStreakState()`, `recordStreakActivity()`, `getDisplayStreak()`, `renderStreakBoard(animateFreshStamp)`
+>   신규 추가. `calendarDayNumber()`를 그대로 재사용해 "하루 지났는지"를 판정함.
+> - **연동 지점**: `logTodayLearned()` 맨 끝에 `recordStreakActivity()` 호출을 추가해, 히라가나 3채널
+>   엔진(`recordMistake`/`recordCorrect`)과 `recordWordResult` 양쪽에서 학습 활동이 있을 때마다
+>   자동으로 스트릭이 갱신되게 함(별도 훅 불필요, 기존 로그 파이프라인에 얹음).
+>   `showTopMenu()`와 앱 최초 로드(`initAppLevelUI`) 양쪽에서 `renderStreakBoard()`를 호출해 메인
+>   화면 진입 시마다 최신 상태를 그림.
+> - **끊김 처리**: 실제 저장된 `currentStreak`/`longestStreak`는 다음 활동 때까지 그대로 두고,
+>   화면에는 `getDisplayStreak()`가 "마지막 활동일이 오늘/어제가 아니면 0으로 보여주기"만 함 —
+>   죄책감을 유발하는 강제 리셋 문구나 애니메이션 없이 조용히 처리하고, 문구도 "오늘부터 다시
+>   시작해도 괜찮아요"로 통일.
+> - **도장 애니메이션**: 매 렌더마다 애니메이션이 반복 재생되지 않도록, `recordStreakActivity()`가
+>   `renderStreakBoard(true)`로 호출할 때만 "오늘" 칸에 `streak-day-fresh` 클래스를 붙여 팝
+>   애니메이션(`streakStampPop`)을 1회만 재생함. 단순히 메뉴를 오갈 때(`showTopMenu()`)는
+>   애니메이션 없이 정적으로만 표시.
+> - `index.html`: `#menuTopLevel` 상단(`.menu-desc` 바로 아래, `#preSleepBanner` 위)에
+>   `<div id="streakBoard" class="streak-board">` 신규 마크업 추가. `.streak-board`/`.streak-board-head`/
+>   `.streak-board-title`/`.streak-board-best`/`.streak-days`/`.streak-day`/`.streak-day-stamp`/
+>   `.streak-day-stamped`/`.streak-day-today`/`.streak-day-fresh` CSS를 기존 디자인 변수(`--washi-deep`,
+>   `--line`, `--indigo`, `--gold`, `--hanko`) 재사용해 신규 추가. "학습이론" 패널에 17번째 카드
+>   (출석 도장판) 신규 추가, 상단 안내 문구 "16가지" → "17가지"로 갱신.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v28` → `koe-app-v29`로 올림.
+> - **미구현으로 남긴 것(의도적 범위 축소)**: 로드맵 원안대로 "3일 연속/7일 연속 달성 시 배지·테마
+>   해금"은 넣지 않음 — 과설계 방지 원칙에 따라 스트릭 표시 자체만 1차 구현. 알림(push notification)도
+>   별도 권한/인프라가 필요해 범위에서 제외(원안대로 "앱을 열었을 때" 트리거로 한정).
 
 **개념**: 이 항목도 새 기억 메커니즘이 아니라 **간격 반복(SRS)이 작동하려면 전제되는 "꾸준한 접속"을 유도하는 습관 형성 장치**임. 매일 짧게라도 접속해 복습이 실행되게 만드는 것이 결과적으로 망각곡선 관리의 성패를 좌우함.
 
@@ -761,18 +911,21 @@
 - 특정 조건(3일 연속, 7일 연속 등) 달성 시 배지/테마 해금은 1차 구현 범위에서는 보류하고, 스트릭 표시 자체만 우선 구현 권장(과설계 방지)
 - **연동 지점**: `calendarDayNumber()` 재사용, 앱 진입 시점(초기화 함수) 훅, 신규 UI 컴포넌트
 
-**우선순위**: 중 (LTM에 직접 기여하진 않지만 습관 형성 → 복습 이행 → LTM으로 이어지는 간접 경로가 뚜렷함)
-**난이도**: 낮음 (기존 날짜 계산 헬퍼 재사용, 상태 구조 단순)
-**주의사항**: 스트릭이 끊겼을 때 죄책감을 유발하는 문구는 피하고, "오늘부터 다시 시작해도 괜찮다"는 톤을 유지할 것 — 스트릭 압박이 오히려 학습 회피로 이어지지 않도록.
+**우선순위**: 중 (완료 — LTM에 직접 기여하진 않지만 습관 형성 → 복습 이행 → LTM으로 이어지는 간접 경로가 뚜렷함)
+**난이도**: 낮음 (완료 — 기존 날짜 계산 헬퍼 재사용, 상태 구조 단순)
+**주의사항**: 스트릭이 끊겼을 때 죄책감을 유발하는 문구는 피하고, "오늘부터 다시 시작해도 괜찮다"는 톤을 유지할 것 — 스트릭 압박이 오히려 학습 회피로 이어지지 않도록. 구현도 이 원칙대로 강제 리셋 문구 없이 조용히 처리함.
 
 ---
 
 ## Part 3 권장 구현 순서
-1. **4. 오답 나무 키우기** — 기존 데이터 재사용, 복습 이행 효과 큼
-2. **1. 소리 도감(프로덕션 효과)** — 비어 있던 LTM 채널을 채움
-3. **5. 스트릭/도장판** — 구현 난이도 낮고 습관 형성 효과
-4. **3. 생성적 문장 조합 연출** — 기존 게임 로직 재사용, 연출만 추가
+1. ~~4. 오답 나무 키우기~~ ✅ 구현 완료 — 기존 데이터 재사용, 복습 이행 효과 큼
+2. ~~1. 소리 도감(프로덕션 효과)~~ ✅ 구현 완료 — IndexedDB 기반 녹음 저장/비교
+3. ~~5. 스트릭/도장판~~ ✅ 구현 완료 — `calendarDayNumber()` 재사용, 기존 로그 파이프라인(`logTodayLearned()`)에 얹어 별도 훅 없이 구현
+4. ~~3. 생성적 문장 조합 연출~~ ✅ 구현 완료 — 기존 `sentence`/`compound` 판정 로직(`pickPart`)은 그대로 두고 요리 비유 연출만 추가
 5. **2. 섀도잉 미니게임** — 신규 게임 흐름이라 공수가 가장 크므로 후순위
+
+**→ Part 3의 5개 항목 전부 구현 완료 대상 중 4개 완료, 남은 항목은 §2 섀도잉 미니게임뿐.**
+**다음 세션 추천**: **2. 섀도잉 미니게임** — Part 3에서 유일하게 남은 항목. 기존 발화 인프라(TTS/음성 인식)는 재사용 가능하나 신규 게임 흐름 자체를 새로 짜야 해서 공수가 가장 큼. 또는 Part 2 §3 어휘 축 오케스트레이터(현재 미착수).
 
 ---
 
@@ -790,25 +943,82 @@
 >
 > 아직 코드는 하나도 없고, 순수 기획 문서다. 실제 구현 세션은 이 문서를 갱신하며 작업할 것(기존 규칙과 동일).
 
-## 1. 분산 학습 · 간섭 방지 (유사 자형/유의어 분산 배치)
+## 1. 분산 학습 · 간섭 방지 (유사 자형/유의어 분산 배치) ✅ 구현 완료
 
-**개념**: 형태나 의미가 비슷한 항목(め/ぬ, わ/れ, さ/き 같은 유사 자형, 또는 뜻이 비슷한 유의어)을 같은 세션에 몰아 학습하면 뇌에서 서로 헷갈려 기억이 뒤섞이는 간섭(interference)이 일어남. 유사 항목을 시간·순서상 떨어뜨려 배치하면 변별력이 높아져 각각 더 견고하게 저장됨.
+> **구현 내역**: 계획서에서 권장한 "1차 구현은 단순 간격 규칙으로 시작" 범위로 구현함
+> (혼동군을 의도적으로 오답 선택지에 포함시키는 절충안은 이번 세션에서 다루지 않음).
+> - `data.js`: `HS_COL_HEADS` 바로 다음에 `HIRAGANA_CONFUSION_GROUPS` 신규 배열 추가 —
+>   자형이 비슷해 흔히 헷갈리는 히라가나 10묶음(`め/ぬ`, `わ/れ/ね`, `さ/き`, `る/ろ`,
+>   `く/へ`, `り/い`, `は/ほ`, `ま/も`, `す/む`, `し/つ`). 청킹(`HIRAGANA_ROW_GROUPS`,
+>   오십음도 행 단위)과는 무관하게 순수 자형 유사성 기준으로만 묶었고, 실증 데이터가
+>   아니라 아동 히라가나 학습에서 흔히 지적되는 혼동 사례를 정리한 시작점임을 주석에 명시.
+> - `logic.js`: `srsWeightedPick()` 바로 위에 두 헬퍼 신규 추가.
+>   `isSameConfusionGroup(chA, chB)`(두 글자가 같은 혼동군인지), `spaceOutConfusionGroups(list)`
+>   (이미 뽑힌 문제 순서를 받아 **누가 뽑혔는지는 그대로 두고 순서만** 재배치 — 최근 2문제
+>   이내에 같은 혼동군 글자가 다시 나오면 뒤쪽에서 충돌 없는 후보를 찾아 자리를 바꾸는
+>   그리디 스왑. 바꿀 후보가 없으면(예: 활성 세트가 혼동군 글자 위주일 때) 그 자리는
+>   충돌을 감수하고 그대로 둠 — 완전 회피를 보장하진 않음).
+>   독립 Node 스크립트로 혼동군 비중이 높은 인접 세트(2000회 무작위 시행)에서 적용 전
+>   평균 충돌 1.581건 → 적용 후 0.409건(약 74% 감소)을 확인함.
+> - `createHiraganaStatsEngine()`(hs/hw/hr 3개 엔진 공용)의 `weightedPick()`(SRS/오답전용/
+>   기본 가중치 3개 분기 전부)와 `pickFromSubset()`(복습 세트용) 반환 직전에
+>   `spaceOutConfusionGroups()`를 적용 — 카드찾기·쓰기·읽기 세 게임과 복습 세트 모두에
+>   자동으로 적용됨(엔진 공용 함수 한 곳만 고쳐 세 게임에 동시 반영).
+> - `showHiraganaSpeedQuestion()`의 오답 카드 후보 풀 구성부(`activePool`/`pool` 산출 직후)에
+>   `nonConfusingPool`(정답과 혼동군인 글자 제외) 필터를 추가 — 제외한 뒤에도
+>   `hsCardCount - 1`개를 채울 만큼 후보가 남으면 그 풀을 쓰고, 부족하면(활성 세트가 작을 때)
+>   원래 풀로 안전하게 폴백해 게임이 막히지 않도록 함.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v24` → `koe-app-v25`로 올림.
+> - **미구현으로 남긴 것**: (1) 계획에 있던 "혼동군을 오히려 오답 선택지에 의도적으로
+>   포함시키되 직후 문제로는 안 나오게" 하는 절충안(선택 사항으로 명시돼 있던 부분)은
+>   1차 구현에서는 다루지 않음 — 지금은 단순 회피만 함. (2) 쓰기(hw)·읽기(hr) 게임은
+>   객관식 선택지가 없는 구조라(직접 쓰기/발화) "동시 등장 방지"는 카드찾기(hs)에만
+>   적용했고, 두 게임은 `weightedPick`/`pickFromSubset`을 통한 "연속 등장 간격 방지"만
+>   적용됨. (3) 유의어(단어 축) 간섭 방지는 범위에 넣지 않음 — 이번 세션은 로드맵 원문의
+>   "자형" 축(히라가나)만 다룸.
 
-**현재 갭**: 청킹(`HIRAGANA_ROW_GROUPS`)은 오십음도 행 단위로만 묶어서, 오히려 **자형이 비슷한 글자가 다른 행에 흩어져 있어도 신경 쓰지 않음**. SRS 가중 뽑기(`srsWeightedPick`)나 활성 세트 확장도 "헷갈리기 쉬운 쌍인지"는 전혀 고려하지 않아, 예를 들어 め/ぬ가 같은 문제 세트나 인접한 순서로 연달아 나올 수 있음.
+**개념**: 형태나 의미가 비슷한 항목(め/ぬ, わ/れ 같은 유사 자형, 또는 뜻이 비슷한 유의어)을 같은 세션에 몰아 학습하면 뇌에서 서로 헷갈려 기억이 뒤섞이는 간섭(interference)이 일어남. 유사 항목을 시간·순서상 떨어뜨려 배치하면 변별력이 높아져 각각 더 견고하게 저장됨.
 
-**구현 계획**:
-- `data.js`에 `HIRAGANA_CONFUSION_PAIRS`(또는 유사군) 신규 데이터 추가: 자형이 비슷해 아이들이 실제로 자주 혼동하는 쌍/군을 정리 (예: `[['め','ぬ'], ['わ','れ'], ['さ','き'], ['る','ろ'], ['く','へ'] ...]`)
-- `logic.js`의 문제 출제 로직(카드찾기 오답 선택지 구성, 활성 세트 순서 등)에서 같은 혼동군에 속한 글자가 **같은 문제의 선택지로 동시에 등장하거나, 연속된 문제로 바로 이어 나오지 않도록** 최소 간격(예: 최근 N문제 이내엔 배제) 규칙 추가
-- 오답 선택지를 랜덤으로 뽑는 기존 로직에, "혼동군 내 글자는 오히려 의도적으로 오답 선택지에 포함시켜 변별 연습을 시키되, 그 직후 문제로는 다시 안 나오게" 하는 절충안도 고려 가능(완전 회피보다 "적당한 간격을 둔 노출"이 desirable difficulty 관점에서 더 나을 수 있음 — 1차 구현은 단순 간격 규칙으로 시작 권장)
-- **연동 지점**: 카드찾기 오답 선택지 구성 함수(`showHiraganaSpeedQuestion` 계열), `getActiveCharList()`/활성 세트 순서, `srsWeightedPick()`
+**현재 갭(해소됨)**: 청킹(`HIRAGANA_ROW_GROUPS`)은 오십음도 행 단위로만 묶어서, 자형이 비슷한 글자가 다른 행에 흩어져 있어도 신경 쓰지 않았음. SRS 가중 뽑기(`srsWeightedPick`)나 활성 세트 확장도 "헷갈리기 쉬운 쌍인지"는 전혀 고려하지 않아, め/ぬ가 같은 문제 세트나 인접한 순서로 연달아 나올 수 있었음 — 이번 세션에서 `spaceOutConfusionGroups`(순서 재배치)와 카드찾기 오답 선택지 필터로 해소.
 
-**우선순위**: 중 (효과는 확실하지만, "혼동군 데이터"를 신뢰성 있게 만드는 데 언어학적 판단이 필요하고 기존 랜덤 로직 여러 곳을 건드려야 함)
-**난이도**: 중 (데이터 자체는 간단하지만, 출제 로직 곳곳에 조건을 끼워 넣어야 해서 회귀 리스크 있음)
-**주의사항**: 혼동군을 완전히 분리시키기만 하면 오히려 변별 연습 기회 자체가 사라질 수 있음 — "동시 노출은 피하되 아예 안 만나게 하지는 않기"의 균형을 잡을 것.
+**우선순위**: 중 (완료)
+**난이도**: 중 (완료 — 데이터는 간단했고, 순서 재배치는 "누가 뽑히는지"를 바꾸지 않는 최소 침습적 방식으로 처리해 회귀 리스크를 낮춤)
+**주의사항**: 혼동군을 완전히 분리시키기만 하면 오히려 변별 연습 기회 자체가 사라질 수 있음 — 이번 구현은 "동시 등장은 피하되" 수준에 그쳤고, "의도적 노출" 절충안은 다음 세션 후보로 남겨둠.
 
 ---
 
-## 2. 인출 단서 다변화 (모달리티 로테이션)
+## 2. 인출 단서 다변화 (모달리티 로테이션) ✅ 구현 완료 (데이터 + 안내 배너)
+
+> **구현 내역**: 계획에 있던 "간단한 1차 구현안"(새 게임 모드 없이 기존 게임을 모달리티별로
+> 재분류하고 안내 문구로 개념 검증) 범위로 구현함.
+> - `data.js`: `STAGE_TO_HIRAGANA_MODE` 바로 다음에 `GAME_MODALITY_MAP` 신규 추가 —
+>   `GAME_STAGE_MAP`과 동일한 34개 게임 모드 전부를 `{present: 'audio'|'text'|'image',
+>   response: 'passive'|'select'|'write'|'speak'}`로 재분류(제시 모달리티 × 응답 모달리티).
+>   **기존 `GAME_STAGE_MAP` 객체에 필드를 얹지 않고 별도 맵으로 분리** — `GAME_STAGE_MAP[mode]
+>   === 'B'`처럼 값 자체를 직접 비교하는 기존 호출부가 많아 값을 객체로 바꾸면 회귀 리스크가
+>   커서, 완전히 독립된 맵으로 추가하는 쪽을 택함(계획서의 "필드 확장 검토" 대신 "별도 맵"으로
+>   결정). 독립 Node 스크립트로 두 맵의 키 34개가 정확히 일치함을 검증함.
+>   `GAME_MODALITY_LABELS`(present/response 값 → "🔊 소리로"/"고르기" 같은 아이 친화적 문구)도
+>   함께 추가.
+> - `logic.js`: `getModesForStage()` 바로 다음에 `getGameModality(mode)`(맵 조회, 없으면 null)와
+>   `formatGameModalityLabel(modality)`(present+response 라벨을 "🔊 소리로 고르기" 한 줄로 조합)
+>   신규 추가.
+> - `pickNextGameForSession()`이 반환하는 추천 객체에 `modalityText` 필드를 추가 — B/C/D 단계는
+>   `STAGE_TO_HIRAGANA_MODE`가 가리키는 모드의 모달리티 라벨을, E단계(복습 세트)는 카드찾기·
+>   쓰기·읽기 3가지가 이미 랜덤 순서로 섞여 나오므로 고정 라벨 대신 "🔁 여러 방식으로 번갈아
+>   만나기" 고정 문구를 씀.
+> - `renderTodayRecommendation()`: "오늘의 추천" 배너에 `.today-recommend-modality` 배지를 추가해
+>   `modalityText`를 노출(예: "🔊 소리로 고르기"). `index.html`에 해당 CSS 신규 추가(디자인 시스템
+>   변수 `--sage` 재사용).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v23` → `koe-app-v24`로 올림.
+> - **미구현으로 남긴 것(의도적 범위 제한)**: 계획에 있던 "복습 세트나 §3 오케스트레이터가
+>   직전 모달리티와 다른 쪽을 우선 선택하도록 가중치 부여"는 하지 않음 — 현재
+>   `STAGE_TO_HIRAGANA_MODE`가 단계마다 게임을 딱 1개로 고정해둔 구조라(히라가나 축은 애초에
+>   단계당 대안이 없음) 로테이션할 여지 자체가 없고, 복습 세트(`buildReviewGameQueue`)는
+>   카드찾기/쓰기/읽기 3개를 정확히 한 번씩 랜덤 순서로 쓰는 구조라 애초에 반복이 불가능해
+>   이미 최적임(추가 로직 불필요). 실질적으로 "여러 모드 중에서" 골라야 하는 상황은 어휘 축
+>   §3 오케스트레이터가 구현될 때(현재 미착수, Part 2 §3 참고) 처음 발생하므로, 그 시점에
+>   `GAME_MODALITY_MAP`을 후보 게임 선정 가중치로 연결하는 것을 권장.
 
 **개념**: 같은 정보를 매번 똑같은 감각 경로로만 인출하면 그 경로에 종속된 얕은 기억이 됨. 오디오만 듣고 맞히기, 이미지/상황만 보고 맞히기, 문맥 속 빈칸 채우기처럼 **인출 단서의 종류 자체**를 바꿔가며 노출하면 뇌가 여러 경로로 같은 기억에 접근하는 법을 익혀 인출 성공률이 높아짐.
 
@@ -826,7 +1036,15 @@
 
 ---
 
-## 3. 수면 전 통합 프롬프트 (Pre-Sleep Consolidation Prompt)
+## 3. 수면 전 통합 프롬프트 (Pre-Sleep Consolidation Prompt) ✅ 구현 완료
+
+> **구현 내역 (재구현 세션)**: 로드맵 원안과 동일한 설계로 구현함.
+> - `logic.js`: 신규 `todayLearnedLog` 상태(`localStorage` 키: `kotobaTodayLearnedLog`, `loadTodayLearnedLog()`/`saveTodayLearnedLog()`) — 오늘(달력 날짜 기준, `calendarDayNumber()` 재사용) 학습/복습한 히라가나 글자·단어를 최근 30개까지 기록. `logTodayLearned(type, key, isCorrect, extra)`를 히라가나 3채널 엔진의 `recordMistake`/`recordCorrect`(글자 축)와 `recordWordResult`(단어 축, §6(a)에서 만든 어휘 통계와 같은 지점) 양쪽에 연결해, 앱 안의 사실상 모든 학습 활동이 자동으로 이 로그에 남도록 함.
+> - `isPreSleepHour(now)`: 로컬 시각 21시 이후 또는 새벽 4시 이전이면 "저녁 시간대"로 판단(원안의 "21시 이후"에 자정을 넘긴 늦은 밤까지 포함하도록 소폭 확장).
+> - `getPreSleepHighlights(limit)`: 오늘 로그 중 오답이 있었던 항목을 우선하고 그 다음 최근 순으로 최대 3개를 뽑음. `enrichTodayLearnedItem()`이 글자는 `HIRAGANA_LIST`에서, 단어는 `DICTIONARY`(또는 기록 당시 함께 저장해둔 kr/emoji)에서 표시 정보를 채움.
+> - `renderPreSleepPrompt()`: 메인 메뉴(`showTopMenu()`, 앱 최초 로드) 진입 시마다 호출되어, 저녁 시간대 + 오늘 로그 있음 + 아직 안 닫음 조건을 모두 만족할 때만 상단에 카드(`#preSleepBanner`)를 보여줌. `dismissPreSleepPrompt()`로 닫으면 `kotobaPreSleepDismissedDay`에 오늘 날짜를 저장해 같은 날 다시 뜨지 않음.
+> - `openPreSleepView()`/`closePreSleepView()`: 클릭 시 화면 전환 없이 오버레이(`#preSleepViewOverlay`)로 "1분 요약" 미니 뷰를 띄움. 정답/오답 표시나 채점 없이 글자/이모지+뜻만 카드로 보여주는 순수 재노출 형태(로드맵 주의사항 준수).
+> - `index.html`: `#menuTopLevel` 상단에 `.pre-sleep-card`(닫기 버튼 포함) + 전체 화면 오버레이 `.pre-sleep-view-overlay` 신규 마크업·CSS 추가, 디자인 시스템 변수(`--indigo`, `--hanko`, `--washi` 등) 재사용.
 
 **개념**: 단기기억이 장기기억으로 전환되는 데 수면, 특히 잠들기 직전에 마지막으로 접한 정보가 유리하다는 연구가 있음. 밤 시간대에 오늘 배운 내용을 가볍게 다시 훑어보게 하는 넛지는 이 타이밍을 적극적으로 활용하는 것.
 
@@ -844,7 +1062,30 @@
 
 ---
 
-## 4. 정교화된 시연 · 자기참조 효과 (Elaborative Rehearsal & Self-Reference)
+## 4. 정교화된 시연 · 자기참조 효과 (Elaborative Rehearsal & Self-Reference) ✅ 구현 완료
+
+> **구현 내역**: 로드맵 원안의 "이모지 선택 방식으로 시작" 권장안을 그대로 따름 — 자유 텍스트 입력은
+> 두지 않고 5개 이모지 중 선택만 가능하게 함.
+> - `logic.js`: `showLtmDetail()` 바로 위에 `SELF_REFERENCE_EMOJI_OPTIONS`(🏠/🍚/👨‍👩‍👧/🐶/😴 5종),
+>   `loadSelfReferenceNotes()`/`saveSelfReferenceNotes(notes)`(`localStorage` 키:
+>   `kotobaSelfReferenceNotes`, `{ch: emoji}` 형태, 글자당 이모지 1개만 저장), `renderSelfReferenceHtml(ch)`,
+>   `toggleSelfReferenceEmoji(ch, emoji)` 신규 추가. 이미 고른 이모지를 다시 누르면 선택이 취소됨(강제 아님).
+>   `showLtmDetail(ch, status)`의 상세보기 HTML 맨 끝(수면 공고화 안내 다음)에 위젯을 이어붙임.
+> - 다음에 같은 글자 상세보기를 열면 "지난번에 네가 고른 건 🏠예요 — 오늘도 그런가요?" 문구로
+>   지난 선택을 함께 보여줘 자기참조 효과를 한 번 더 떠올리게 함.
+> - `index.html`: `.ltm-detail-self-ref`/`.self-ref-btn-row`/`.self-ref-btn`/`.self-ref-btn-active`/
+>   `.self-ref-note` CSS를 기존 디자인 변수(`--line`, `--sage`, `--hanko`, `--washi-deep`) 재사용해 신규 추가.
+>   "학습이론" 패널에 자기참조 효과 설명 카드(14번) 신규 추가, 상단 안내 문구 "13가지" → "14가지"로 갱신.
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v25` → `koe-app-v26`으로 올림.
+> - **미구현으로 남긴 것(의도적 범위 축소)**: 로드맵 원안의 "단어 카드"쪽 연동(`HIRAGANA_SAMPLE_WORDS`
+>   단어 칩에도 동일 위젯 부착)은 이번 세션에서 하지 않음 — 현재 단어 축에는 `showLtmDetail`에 준하는
+>   전용 상세보기 화면 자체가 없어(장기기억 현황판이 히라가나 글자 축에만 존재), 위젯을 붙일 마땅한
+>   연동 지점이 없었음. 히라가나 글자 상세보기(`showLtmDetail`)에는 원안대로 전부 연동 완료. 단어 축
+>   전용 상세보기가 생기면(Part 2 §3 어휘 오케스트레이터 등과 함께 논의 권장) 그때 같은 위젯을
+>   재사용해 확장하는 것을 권장.
+> - 자유 텍스트 메모 입력(원안의 "선택적 확장안")은 하지 않음 — 이모지 선택만으로도 개념 검증에
+>   충분하다고 판단했고, 아이 대상 UX 원칙(타이핑 부담 최소화)에도 더 부합해 1차 구현 범위를 이모지로
+>   한정함.
 
 **개념**: 새 정보를 자신의 경험이나 익숙한 사물에 빗대어 연결하면(정교화) 기억흔적이 깊어짐. 특히 "나 자신"과 관련지은 정보(self-reference effect)는 타인이 만들어준 연상보다 훨씬 강하게 기억됨.
 
@@ -856,17 +1097,24 @@
 - 입력 부담을 줄이기 위해 자유 텍스트보다는 이모지 3~5개 중 선택하는 방식으로 시작하는 것을 권장(아이 대상 UX, 타이핑 부담 최소화)
 - **연동 지점**: `showLtmDetail()`, `HIRAGANA_MNEMONICS`(기존 이중부호화 힌트) 옆에 나란히 배치, 신규 `localStorage` 키
 
-**우선순위**: 중 (효과는 강력하지만, 텍스트/이모지 입력 UI가 아이 연령대에 맞게 설계돼야 하고 저장 데이터 관리가 새로 필요)
-**난이도**: 중 (입력 UI, 저장/불러오기 로직 신규 — 판정 로직은 없어 로직 자체는 단순)
-**주의사항**: 아이가 남기는 메모는 사적인 내용일 수 있으므로 기기 로컬 저장만 하고 서버 전송/공유 기능은 넣지 않을 것(§1 소리 도감과 동일한 원칙 적용).
+**우선순위**: 중 (완료 — 효과는 강력하지만, 텍스트/이모지 입력 UI가 아이 연령대에 맞게 설계돼야 하고 저장 데이터 관리가 새로 필요)
+**난이도**: 중 (완료 — 이모지 선택 방식으로 범위를 좁혀 입력 UI/저장·불러오기 로직만 신규 구현, 판정 로직 없어 로직 자체는 단순)
+**주의사항**: 아이가 남기는 메모는 사적인 내용일 수 있으므로 기기 로컬 저장만 하고 서버 전송/공유 기능은 넣지 않을 것(§1 소리 도감과 동일한 원칙 적용) — 구현도 이 원칙대로 `localStorage`에만 저장함.
 
 ---
 
 ## Part 4 권장 구현 순서
-1. **3. 수면 전 통합 프롬프트** — 기존 헬퍼 재사용, 효과 대비 구현 비용 가장 낮음
-2. **2. 인출 단서 다변화** — §3 오케스트레이터 설계 시점에 함께 넣는 것이 효율적이므로 그 타이밍에 맞춰 진행
-3. **1. 분산 학습·간섭 방지** — 혼동군 데이터 정리 + 출제 로직 여러 곳 수정 필요
-4. **4. 정교화·자기참조 효과** — 입력 UI 신규 설계 필요해 후순위
+1. ~~3. 수면 전 통합 프롬프트~~ ✅ 구현 완료 — 기존 헬퍼 재사용, 효과 대비 구현 비용 가장 낮음
+2. ~~2. 인출 단서 다변화~~ ✅ 구현 완료(데이터+안내 배너 범위) — 어휘 축 §3 오케스트레이터가 생기면 후보 선정 가중치로 확장 권장(위 "미구현으로 남긴 것" 참고)
+3. ~~1. 분산 학습·간섭 방지~~ ✅ 구현 완료 — 혼동군 데이터 + 순서 재배치(`spaceOutConfusionGroups`) + 카드찾기 동시 등장 방지
+4. ~~4. 정교화·자기참조 효과~~ ✅ 구현 완료 — 이모지 선택 위젯으로 범위를 좁혀 히라가나 글자 상세보기(`showLtmDetail`)에 연동. 단어 축 확장은 미구현으로 남김(위 "미구현으로 남긴 것" 참고)
+
+**→ Part 4의 4개 항목 전부 구현 완료.**
+**다음 세션 추천(갱신됨)**: Part 3도 §4 오답 나무·§1 소리 도감·§5 스트릭/도장판·§3 생성적 문장
+조합 연출까지 구현 완료되어, 남은 항목은 Part 3 §2(섀도잉 미니게임)뿐. 자세한 내용은
+"Part 3 권장 구현 순서" 섹션 참고. 또는 Part 2 §3 어휘 축 오케스트레이터(현재 미착수 —
+완성되면 위 "인출 단서 다변화"의 모달리티 가중치와 "자기참조 효과"의 단어 축 확장을 함께 붙일
+수 있는 지점).
 
 ---
 

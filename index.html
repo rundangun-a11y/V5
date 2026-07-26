@@ -210,6 +210,7 @@
   body.game-fullscreen #menuWordcardsLevel,
   body.game-fullscreen #menuVideosLevel,
   body.game-fullscreen #menuLtmLevel,
+  body.game-fullscreen #menuMistakeGardenLevel,
   body.game-fullscreen #menuTheoryLevel,
   body.game-fullscreen .log-title,
   body.game-fullscreen .log-list,
@@ -1436,6 +1437,57 @@
     gap: 10px;
     margin-bottom: 8px;
   }
+  .ltm-vocab-stage-box {
+    background: var(--washi-deep);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 18px 0 4px;
+  }
+  .ltm-vocab-stage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--indigo);
+    margin-bottom: 10px;
+  }
+  .ltm-vocab-stage-header span#ltmVocabStageCount {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    color: #7a7364;
+  }
+  .ltm-vocab-stage-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ltm-vocab-stage-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--sumi);
+  }
+  .ltm-vocab-stage-chip b {
+    color: var(--hanko);
+  }
+  .ltm-vocab-stage-desc {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #7a7364;
+    line-height: 1.5;
+  }
   .ltm-detail-ch {
     font-family: 'Shippori Mincho', serif;
     font-weight: 800;
@@ -1512,6 +1564,101 @@
     padding-top: 8px;
     font-size: 12px;
     color: var(--indigo);
+    line-height: 1.6;
+  }
+
+  /* 💭 정교화·자기참조 효과 — 상세보기에 "나의 하루와 닮은 점" 이모지 선택 위젯(선택 사항) */
+  .ltm-detail-self-ref {
+    border-top: 1.5px solid var(--line);
+    margin-top: 4px;
+    padding-top: 8px;
+  }
+  .ltm-detail-self-ref-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--sage);
+    margin-bottom: 6px;
+  }
+  .self-ref-btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .self-ref-btn {
+    border: 1.5px solid var(--line);
+    background: #fff;
+    border-radius: 999px;
+    font-size: 16px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .self-ref-btn-active {
+    border-color: var(--hanko);
+    background: var(--washi-deep);
+  }
+  .self-ref-note {
+    font-size: 12px;
+    color: #8a8272;
+    margin-top: 6px;
+    line-height: 1.6;
+  }
+
+  /* 🎙️ 프로덕션 효과 — 소리 도감(내 목소리 녹음 비교) 위젯 */
+  .ltm-detail-voice {
+    border-top: 1.5px solid var(--line);
+    margin-top: 4px;
+    padding-top: 8px;
+  }
+  .ltm-detail-voice-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--sage);
+    margin-bottom: 6px;
+  }
+  .voice-record-btn, .voice-compare-btn, .voice-rerecord-btn {
+    border: 1.5px solid var(--line);
+    background: #fff;
+    border-radius: 999px;
+    font-size: 12.5px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .voice-record-btn {
+    color: var(--hanko);
+    border-color: var(--hanko);
+  }
+  .voice-record-btn-recording {
+    background: var(--hanko);
+    color: #fff;
+    animation: voiceRecPulse 1s ease-in-out infinite;
+  }
+  @keyframes voiceRecPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .voice-compare-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .voice-compare-btn {
+    color: var(--indigo);
+  }
+  .voice-rerecord-btn {
+    color: #8a8272;
+    font-size: 11.5px;
+  }
+  .voice-unsupported {
+    font-size: 12px;
+    color: #8a8272;
+    line-height: 1.6;
+  }
+  .voice-note {
+    font-size: 12px;
+    color: #8a8272;
+    margin-top: 6px;
     line-height: 1.6;
   }
 
@@ -1663,6 +1810,17 @@
     color: #7a7364;
     line-height: 1.4;
   }
+  /* 🔀 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2 */
+  .today-recommend-modality {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--sage);
+    background: rgba(110,127,92,0.12);
+    border-radius: 8px;
+    padding: 2px 7px;
+  }
   .today-recommend-btn {
     flex-shrink: 0;
     border: none;
@@ -1674,6 +1832,206 @@
     padding: 8px 14px;
     cursor: pointer;
     white-space: nowrap;
+  }
+
+  /* 🔥 스트릭 / 출석 도장판 — learning-theory-roadmap.md Part 3 §5 */
+  .streak-board {
+    display: none;
+    background: var(--washi-deep);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin: 4px 0 14px;
+  }
+  .streak-board-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .streak-board-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--indigo);
+  }
+  .streak-board-best {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gold);
+    background: rgba(184,137,47,0.14);
+    border-radius: 8px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .streak-days {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .streak-day {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .streak-day-label {
+    font-size: 10px;
+    color: #8a8272;
+  }
+  .streak-day-stamp {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1.5px dashed var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 15px;
+    color: transparent;
+  }
+  .streak-day-stamped .streak-day-stamp {
+    border: 1.5px solid var(--hanko);
+    color: var(--hanko);
+    background: rgba(183,65,14,0.08);
+  }
+  .streak-day-today .streak-day-label {
+    color: var(--hanko);
+    font-weight: 700;
+  }
+  .streak-day-today .streak-day-stamp {
+    border-color: var(--hanko);
+  }
+  .streak-day-fresh .streak-day-stamp {
+    animation: streakStampPop 0.5s ease;
+  }
+  @keyframes streakStampPop {
+    0% { transform: scale(0.4) rotate(-15deg); opacity: 0; }
+    60% { transform: scale(1.18) rotate(6deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  /* 🌙 수면 전 통합 프롬프트 — learning-theory-roadmap.md Part 4 §3 */
+  .pre-sleep-card {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--indigo);
+    border: 1.5px solid var(--indigo);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin: 4px 0 10px;
+  }
+  .pre-sleep-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .pre-sleep-emoji { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .pre-sleep-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    margin-bottom: 2px;
+    line-height: 1.4;
+  }
+  .pre-sleep-desc {
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.4;
+  }
+  .pre-sleep-close-btn {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.7);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .pre-sleep-view-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(33,29,25,0.55);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .pre-sleep-view-box {
+    background: var(--washi);
+    border-radius: 18px;
+    padding: 20px;
+    max-width: 420px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .pre-sleep-view-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--indigo);
+  }
+  .pre-sleep-view-close {
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    color: #7a7364;
+    cursor: pointer;
+  }
+  .pre-sleep-view-desc {
+    font-size: 12px;
+    color: #7a7364;
+    margin: 6px 0 16px;
+  }
+  .pre-sleep-view-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+  .pre-sleep-card-main {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 36px;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .pre-sleep-card-sub {
+    font-size: 12px;
+    color: var(--sumi);
+    text-align: center;
+    margin-top: 4px;
+  }
+  .pre-sleep-view-list > div {
+    background: #fff;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 18px;
+    min-width: 90px;
+  }
+  .pre-sleep-view-done-btn {
+    display: block;
+    width: 100%;
+    margin-top: 18px;
+    border: none;
+    background: var(--hanko);
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
   }
 
   /* 📚 학습이론 패널 — 앱에 적용된 장기기억 관련 이론/기능을 일러스트와 함께 설명 */
@@ -1753,6 +2111,38 @@
     height: 10px;
     border-radius: 3px;
     display: inline-block;
+  }
+
+  /* 🌳 오답 나무 키우기 — 46자 그리드는 기존 hs-stat-grid를 그대로 재사용하고,
+     칸 안쪽 셀만 식물 모양 전용 스타일(mg-*)로 새로 정의합니다 */
+  .mg-stat-cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    border: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    background: #fff;
+  }
+  .mg-cell-emoji { font-size: 17px; line-height: 1; }
+  .mg-cell-ch {
+    font-family: 'Shippori Mincho', serif;
+    font-weight: 700;
+    font-size: 9.5px;
+    color: #7a7364;
+  }
+  .mg-stat-cell.mg-tier-0 { background: #faf6ec; border-color: #cbb98b; }
+  .mg-stat-cell.mg-tier-1 { background: #eef8ea; border-color: #a8d29b; }
+  .mg-stat-cell.mg-tier-2 { background: #fdf0f4; border-color: #e3a9bf; }
+  .mg-stat-cell.mg-tier-3 { background: #e3f5e6; border-color: #7fbf8a; }
+  .mg-stat-cell.mg-grew { animation: mgGrewPulse 0.8s ease; }
+  @keyframes mgGrewPulse {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.35); box-shadow: 0 0 0 5px rgba(110,127,92,0.22); }
+    100% { transform: scale(1); }
   }
   .hs-result-title {
     font-family: 'Shippori Mincho', serif;
@@ -2463,6 +2853,77 @@
   }
   .sentence-progress .blank {
     color: #b7ab97;
+  }
+  /* 🍳 생성적 문장 조합 연출 — learning-theory-roadmap.md Part 3 §3
+     기존 판정 로직(pickPart)은 그대로 두고, "단어 재료를 냄비에 넣어 요리를 완성한다"는
+     연출만 sentence/compound 두 게임 공용으로 추가함 */
+  .sentence-progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin: 4px 0 18px;
+  }
+  .sentence-progress-row .sentence-progress {
+    margin: 0;
+  }
+  .cook-pot-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .cook-pot {
+    font-size: 30px;
+    line-height: 1;
+  }
+  .cook-pot-bump {
+    animation: cookPotBump 0.4s ease;
+  }
+  .cook-pot-complete {
+    animation: cookPotComplete 0.9s ease;
+  }
+  @keyframes cookPotBump {
+    0% { transform: scale(1) rotate(0); }
+    40% { transform: scale(1.25) rotate(-6deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+  @keyframes cookPotComplete {
+    0% { transform: scale(1) rotate(0); }
+    30% { transform: scale(1.45) rotate(8deg); }
+    55% { transform: scale(1.15) rotate(-6deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+  .cook-bite-reaction {
+    position: absolute;
+    top: -6px;
+    font-size: 20px;
+    pointer-events: none;
+    animation: cookBitePop 1.1s ease forwards;
+  }
+  @keyframes cookBitePop {
+    0% { transform: translateY(0) scale(0.5); opacity: 0; }
+    25% { transform: translateY(-14px) scale(1.2); opacity: 1; }
+    70% { transform: translateY(-22px) scale(1); opacity: 1; }
+    100% { transform: translateY(-34px) scale(0.8); opacity: 0; }
+  }
+  /* 정답 카드를 고를 때, 그 카드의 이모지가 화면 좌표를 따라 냄비까지 날아가는 임시 요소.
+     --toss-dx/--toss-dy는 JS(playIngredientTossAnimation)가 매번 계산해 인라인으로 넣어줌 */
+  .ingredient-toss {
+    position: fixed;
+    font-size: 26px;
+    z-index: 600;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    animation: ingredientTossFly 0.6s cubic-bezier(.35,.6,.4,1) forwards;
+  }
+  @keyframes ingredientTossFly {
+    0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    70% { transform: translate(calc(-50% + var(--toss-dx)), calc(-50% + var(--toss-dy))) scale(0.6); opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--toss-dx)), calc(-50% + var(--toss-dy))) scale(0.3); opacity: 0; }
   }
   .sentence-options {
     display: grid;
@@ -4205,8 +4666,24 @@
   <!-- 🗂️ 상위 메뉴: 기능 영역을 먼저 고릅니다 -->
   <div class="menu-level" id="menuTopLevel">
     <div class="menu-desc">배우고 싶은 영역을 먼저 골라주세요</div>
+    <div id="streakBoard" class="streak-board" style="display:none;"></div>
+    <div id="preSleepBanner" class="pre-sleep-card" style="display:none;"></div>
     <div id="todayRecommendBanner" class="today-recommend-card" style="display:none;"></div>
     <div class="menu-grid" id="menuTopGrid"></div>
+  </div>
+
+  <!-- 🌙 수면 전 통합 프롬프트 — "1분 요약" 미니 뷰. 정답/오답을 가리는 퀴즈가 아니라
+       오늘 만난 항목을 가볍게 다시 보여주기만 하는 화면입니다 -->
+  <div class="pre-sleep-view-overlay" id="preSleepViewOverlay" style="display:none;">
+    <div class="pre-sleep-view-box">
+      <div class="pre-sleep-view-header">
+        <span>🌙 오늘의 1분 요약</span>
+        <button class="pre-sleep-view-close" onclick="closePreSleepView()">✕</button>
+      </div>
+      <div class="pre-sleep-view-desc">정답 맞히기가 아니에요 — 그냥 한 번 더 눈에 담아볼까요?</div>
+      <div class="pre-sleep-view-list" id="preSleepViewList"></div>
+      <button class="pre-sleep-view-done-btn" onclick="closePreSleepView()">다 봤어요, 잘 자요 🌙</button>
+    </div>
   </div>
 
   <!-- 🗂️ 하위 메뉴: 고른 영역 안의 세부 게임을 고릅니다 -->
@@ -4773,9 +5250,14 @@
           🔊 문장 다시 듣기
         </button>
 
-        <!-- 선택한 순서를 보여주는 진행 표시줄 -->
-        <div class="sentence-progress" id="sentenceProgress">
-          <span class="blank">❓</span> <span class="blank">❓</span>
+        <!-- 선택한 순서를 보여주는 진행 표시줄 + 🍳 재료를 담는 냄비(생성적 문장 조합 연출) -->
+        <div class="sentence-progress-row">
+          <div class="sentence-progress" id="sentenceProgress">
+            <span class="blank">❓</span> <span class="blank">❓</span>
+          </div>
+          <div class="cook-pot-wrap">
+            <div class="cook-pot" id="sentencePot">🍲</div>
+          </div>
         </div>
 
         <!-- 정답 문장/뜻 공개 영역 -->
@@ -4865,9 +5347,14 @@
           🔊 단어 다시 듣기
         </button>
 
-        <!-- 선택한 순서를 보여주는 진행 표시줄 -->
-        <div class="sentence-progress" id="compoundProgress">
-          <span class="blank">❓</span> <span class="blank">❓</span>
+        <!-- 선택한 순서를 보여주는 진행 표시줄 + 🍳 재료를 담는 냄비(생성적 문장 조합 연출) -->
+        <div class="sentence-progress-row">
+          <div class="sentence-progress" id="compoundProgress">
+            <span class="blank">❓</span> <span class="blank">❓</span>
+          </div>
+          <div class="cook-pot-wrap">
+            <div class="cook-pot" id="compoundPot">🍲</div>
+          </div>
         </div>
 
         <!-- 정답 분해/합성 결과 공개 영역 -->
@@ -5983,6 +6470,40 @@
   </div>
 
   <div class="ltm-detail-box" id="ltmDetailBox"></div>
+
+  <div class="ltm-vocab-stage-box" id="ltmVocabStageBox">
+    <div class="ltm-vocab-stage-header">
+      <span>📚 히라가나 밖 단어 학습 단계</span>
+      <span id="ltmVocabStageCount">0개 단어 기록됨</span>
+    </div>
+    <div class="ltm-vocab-stage-row" id="ltmVocabStageRow"></div>
+    <div class="ltm-vocab-stage-desc">퀴즈·쓰기·말하기·문장조합 등 히라가나 밖 모든 게임에서 만난 단어들이 재인(🔍)→회상(✍️)→발화(🗣️)→유지(🌱) 중 어디쯤 있는지 보여줘요</div>
+  </div>
+</div>
+
+<div class="menu-level" id="menuMistakeGardenLevel" style="display:none;">
+  <div class="menu-category-header">
+    <button class="lvl-btn" onclick="showTopMenu()">◀ 처음으로</button>
+    <div class="menu-category-title">🌳 오답 정원</div>
+    <span style="width:64px;"></span>
+  </div>
+
+  <div class="video-desc">복습이 필요한 글자일수록 아직 씨앗이에요. 복습 세트로 자주 맞힐수록 새싹 → 꽃 → 나무로 무럭무럭 자라나요. 지난번보다 자란 글자는 톡 튀어오르며 알려줘요.</div>
+
+  <div class="ltm-summary-row">
+    <span class="ltm-summary-chip"><i style="background:#faf6ec; border:1.5px solid #cbb98b;"></i>🌰 씨앗 <span id="mgCount0">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#eef8ea; border:1.5px solid #a8d29b;"></i>🌱 새싹 <span id="mgCount1">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#fdf0f4; border:1.5px solid #e3a9bf;"></i>🌸 꽃 <span id="mgCount2">0</span>자</span>
+    <span class="ltm-summary-chip"><i style="background:#e3f5e6; border:1.5px solid #7fbf8a;"></i>🌳 나무 <span id="mgCount3">0</span>자</span>
+  </div>
+
+  <div class="ltm-review-launch">
+    <div class="ltm-review-desc" id="mgGardenDesc">정원을 확인하는 중…</div>
+    <button class="quiz-audio-btn" onclick="startReviewSession()">🔁 물 주러 가기 (복습 세트)</button>
+  </div>
+
+  <div class="hs-stat-grid" id="mistakeGardenGrid"></div>
+
 </div>
 
 <div class="menu-level" id="menuTheoryLevel" style="display:none;">
@@ -5992,7 +6513,7 @@
     <span style="width:64px;"></span>
   </div>
 
-  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 13가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
+  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 18가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
 
   <!-- 1. 에빙하우스 망각곡선 -->
   <div class="theory-card">
@@ -6366,6 +6887,137 @@
     <div class="theory-card-desc">모든 아이가 똑같은 순서로 배울 필요는 없어요. 사전지식·작업기억·연상학습 속도·청지각 변별력 같은 <b>진단 결과</b>를 바탕으로 "노출/재인/회상/발화/유지" 5단계를 얼마나 섞어줄지 목표 비율을 정하고, 지금 배우는 글자들이 실제로 어느 단계에 몰려 있는지와 비교해 <b>가장 부족한 단계</b>의 게임을 추천해요.</div>
     <div class="theory-card-desc" style="margin-top:8px;">아직은 규칙 기반의 1단계 버전이에요 — 히라가나 학습(카드찾기·쓰기·읽기)에만 우선 적용했고, 실제 성과를 보며 비율을 스스로 다듬는 것은 다음 단계 과제로 남겨뒀어요.</div>
     <div class="theory-card-applied">📍 적용: 상위 메뉴 상단의 "오늘의 추천" 카드(<code>renderTodayRecommendation()</code>)가 <code>pickNextGameForSession()</code>으로 계산된 추천을 보여주고, "지금 시작하기"를 누르면 해당 게임(또는 복습 세트)로 바로 이동해요.</div>
+  </div>
+
+  <!-- 14. 정교화된 시연 · 자기참조 효과 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">💭</span>
+      <span class="theory-card-title">나의 하루와 닮은 점 — 자기참조 효과</span>
+      <span class="theory-card-tag">Elaborative Rehearsal & Self-Reference</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="45" y="45" font-size="30" text-anchor="middle" font-family="'Shippori Mincho', serif">あ</text>
+        <path d="M80,45 L150,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr9)"/>
+        <text x="200" y="35" font-size="20" text-anchor="middle">🏠</text>
+        <text x="200" y="60" font-size="9" text-anchor="middle" fill="#8a8272">나의 경험과 연결</text>
+        <defs>
+          <marker id="arr9" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">앱이 미리 만들어준 연상(이중부호화)보다, <b>내가 직접</b> 나의 경험이나 익숙한 사물과 연결지은 정보가 훨씬 오래 기억에 남아요. "나 자신"과 관련지은 정보일수록 기억흔적이 깊어진다는 자기참조 효과(self-reference effect)예요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">타이핑 부담을 없애기 위해 자유 입력 대신 <b>이모지 5개 중 선택</b>하는 방식으로 시작했고, 다음에 같은 글자를 다시 보면 지난번 선택을 함께 보여줘 연결을 한 번 더 떠올리게 해요.</div>
+    <div class="theory-card-applied">📍 적용: 장기기억 현황 상세보기(<code>showLtmDetail()</code>)의 "💭 이 글자, 나의 하루와 닮은 점이 있나요?" 위젯 — 선택은 완전히 선택 사항이고, 서버 전송 없이 기기 로컬(<code>kotobaSelfReferenceNotes</code>)에만 저장돼요.</div>
+  </div>
+
+  <!-- 15. 오답 나무 키우기 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🌳</span>
+      <span class="theory-card-title">오답 정원 — 복습할수록 무럭무럭 자라요</span>
+      <span class="theory-card-tag">Review Adherence UI</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="45" y="55" font-size="26" text-anchor="middle">🌰</text>
+        <path d="M75,45 L115,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr10)"/>
+        <text x="145" y="55" font-size="26" text-anchor="middle">🌱</text>
+        <path d="M175,45 L215,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr10)"/>
+        <text x="235" y="55" font-size="30" text-anchor="middle">🌳</text>
+        <defs>
+          <marker id="arr10" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">이 이론 자체는 새로운 기억 메커니즘이 아니에요. 앞서 만든 <b>간격 반복(SRS)과 복습 세트</b>가 실제로 "수행"돼야 효과가 있으니까, 복습을 하고 싶게 만드는 <b>행동 유도 장치</b>예요. 틀린 글자를 벌점처럼 보여주지 않고, 복습할수록 씨앗 → 새싹 → 꽃 → 나무로 자라나는 정원으로 표현해요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">새 판정 로직은 전혀 만들지 않고, 쓰기(회상) 게임의 <b>기존 SRS 단계</b>를 그대로 식물 성장 단계에 매핑했어요. 지난번 방문보다 자란 글자는 톡 튀어오르며 알려줘요.</div>
+    <div class="theory-card-applied">📍 적용: "오답 정원" 패널(<code>renderMistakeGardenPanel()</code>)이 <code>hwStats</code>의 <code>srsStage</code>를 4단계 식물로 매핑해 46자 그리드로 보여주고, "🔁 물 주러 가기" 버튼을 누르면 기존 복습 세트(<code>startReviewSession()</code>)로 바로 이동해요.</div>
+  </div>
+
+  <!-- 16. 프로덕션 효과 - 소리 도감 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🎙️</span>
+      <span class="theory-card-title">소리 도감 — 내가 낸 소리는 더 오래 남아요</span>
+      <span class="theory-card-tag">Production Effect</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="45" y="45" font-size="30" text-anchor="middle" font-family="'Shippori Mincho', serif">あ</text>
+        <path d="M80,45 L150,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr11)"/>
+        <text x="200" y="35" font-size="20" text-anchor="middle">🎙️</text>
+        <text x="200" y="60" font-size="9" text-anchor="middle" fill="#8a8272">내 목소리로 다시 산출</text>
+        <defs>
+          <marker id="arr11" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">원어민 발음을 눈으로 보거나 귀로 듣기만 할 때보다, <b>스스로 소리 내어 말한(산출한)</b> 정보가 더 오래 기억에 남아요. 산출 과정 자체가 한 번 더 인출 연습이 되기 때문이에요(production effect).</div>
+    <div class="theory-card-desc" style="margin-top:8px;">장기기억 현황 상세보기에서 내 목소리를 짧게 녹음해두면, 다음에 같은 글자를 볼 때 <b>원어민 발음과 내 발음을 나란히</b> 비교해 들을 수 있어요. 녹음은 글자당 최신 1개만 보관하고, 기기 로컬에만 저장돼요.</div>
+    <div class="theory-card-applied">📍 적용: 장기기억 현황 상세보기(<code>showLtmDetail()</code>)의 "🎙️ 내 목소리로 녹음해서 비교해보기" 위젯 — <code>MediaRecorder</code> API로 녹음하고 <code>kotobaVoiceBookmark</code>에 저장해요. 녹음 여부는 통계 판정에 영향을 주지 않아요.</div>
+  </div>
+
+  <!-- 17. 스트릭 / 출석 도장판 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🔥</span>
+      <span class="theory-card-title">출석 도장판 — 꾸준히 만나야 기억도 자라요</span>
+      <span class="theory-card-tag">Habit Formation</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="60" cy="45" r="18" fill="none" stroke="var(--hanko)" stroke-width="2"/>
+        <text x="60" y="51" font-size="16" text-anchor="middle" fill="var(--hanko)" font-family="'Shippori Mincho', serif">印</text>
+        <path d="M85,45 L125,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr12)"/>
+        <circle cx="150" cy="45" r="18" fill="none" stroke="var(--hanko)" stroke-width="2"/>
+        <text x="150" y="51" font-size="16" text-anchor="middle" fill="var(--hanko)" font-family="'Shippori Mincho', serif">印</text>
+        <path d="M175,45 L215,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr12)"/>
+        <text x="235" y="52" font-size="24" text-anchor="middle">🔥</text>
+        <defs>
+          <marker id="arr12" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">이 항목도 새로운 기억 메커니즘이 아니에요. 앞서 만든 <b>간격 반복(SRS)</b>이 효과를 내려면, 애초에 <b>꾸준히 접속해 복습이 실제로 이뤄져야</b> 해요. 하루라도 끊기면 망각 곡선 관리가 무너지기 쉬워서, 매일 짧게라도 만나는 습관 자체를 만드는 장치예요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">스트릭이 끊겨도 벌점처럼 표시하지 않아요. 오늘 학습하면 그날 칸에 도장이 톡 찍히고, 며칠 쉬었다 와도 "오늘부터 다시 시작해도 괜찮아요"라는 문구로 맞이해요 — 압박감이 오히려 학습 회피로 이어지지 않도록요.</div>
+    <div class="theory-card-applied">📍 적용: 메인 화면 상단 도장판(<code>renderStreakBoard()</code>) — 최근 7일 칸과 최고 기록을 보여줘요. <code>calendarDayNumber()</code>로 날짜 경계를 판정하고, 학습 기록이 하나라도 쌓일 때마다(<code>logTodayLearned()</code> 내부) <code>recordStreakActivity()</code>가 <code>kotobaStreak</code>(연속 일수·최고 기록)를 갱신해요.</div>
+  </div>
+
+  <!-- 18. 생성적 문장 조합 연출 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🍳</span>
+      <span class="theory-card-title">단어 재료로 요리해요 — 생성적 문장 조합</span>
+      <span class="theory-card-tag">Generation Effect</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="40" y="35" font-size="20" text-anchor="middle">🍚</text>
+        <text x="40" y="65" font-size="20" text-anchor="middle">🌅</text>
+        <path d="M65,45 L130,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr13)"/>
+        <text x="155" y="52" font-size="30" text-anchor="middle">🍲</text>
+        <path d="M180,45 L215,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr13)"/>
+        <text x="235" y="52" font-size="24" text-anchor="middle">😋</text>
+        <defs>
+          <marker id="arr13" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">이미 아는 단어를 <b>스스로 순서대로 조합</b>해 문장이나 합성어를 완성하는 과정은, 완성된 결과를 보기만 하는 것보다 기억에 오래 남아요(생성 효과, generation effect). "2단어 문장 맞히기"와 "합성어 맞추기"는 원래도 이 원리로 만들어진 게임이었어요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">이번엔 여기에 <b>요리 비유 연출</b>만 얹었어요 — 판정 로직은 그대로 두고, 정답 카드를 고를 때마다 재료가 냄비로 날아 들어가고, 두 재료가 모두 맞으면 냄비가 통통 튀며 "😋" 리액션이 떠올라요. 생성 과정 자체의 재미를 키워서 반복 참여를 유도하려는 목적이에요.</div>
+    <div class="theory-card-applied">📍 적용: 2단어 문장 맞히기·합성어 맞추기 공용 로직(<code>createSequencePickQuizGame()</code>)의 <code>pickPart()</code>에서 정답을 고를 때마다 <code>playIngredientTossAnimation()</code>이, 두 재료가 모두 맞으면 <code>playDishCompleteReaction()</code>이 호출돼요. 점수·타이머·SRS 기록에는 전혀 관여하지 않는 순수 연출 레이어예요.</div>
   </div>
 
 </div>
