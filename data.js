@@ -3078,3 +3078,27 @@ const GAME_STAGE_MAP = {
   speech: 'D', hiraganaRead: 'D', sentence: 'D', compound: 'D', wordsearch: 'D'
 };
 
+/* 🧭 §3 오케스트레이터 Phase 1(규칙 기반) — learning-theory-roadmap.md Part 2 §3.
+   "진단 프로필(§1)로 정한 학습자 성향 → 오늘 세션에 A~E 단계를 얼마나 섞어줄까"의
+   목표 비율표. roadmap 원안의 "신중한 학습자/보통/빠른 습득자" 3분류 예시 배합을 그대로 데이터화함.
+   실제 학습자 성향 분류(classifyLearnerTendency)와 목표 대비 실제 분포 비교는 logic.js에서 수행. */
+const LEARNER_STAGE_RATIO = {
+  cautious: { A: 0.35, B: 0.25, C: 0.20, D: 0.10, E: 0.10 },
+  normal:   { A: 0.20, B: 0.25, C: 0.25, D: 0.15, E: 0.15 },
+  fast:     { A: 0.10, B: 0.20, C: 0.25, D: 0.25, E: 0.20 }
+};
+
+/* 히라가나 축에서 각 단계(A~D)를 대표하는 게임 모드 — §3 Phase 1은 우선 히라가나
+   카드찾기/쓰기/읽기(재인·회상·발화) 3채널 통계가 이미 갖춰진 히라가나 학습에만 적용함.
+   A단계는 히라가나 전용 "듣기만 하는" 모드가 따로 없어, 저부담 반복 노출 게임인
+   exposure(반복 노출 학습)로 근사함 — 특정 글자를 정확히 겨냥하진 못하는 근사치임을
+   감안할 것. E단계는 특정 모드가 아니라 기존 복습 세트(startReviewSession)로 대체. */
+const STAGE_TO_HIRAGANA_MODE = {
+  A: 'exposure',
+  B: 'hiraganaSpeed',
+  C: 'hiraganaWrite',
+  D: 'hiraganaRead',
+  E: null
+};
+
+

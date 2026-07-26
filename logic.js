@@ -10111,6 +10111,146 @@ function getModesForStage(stage) {
   return Object.keys(GAME_STAGE_MAP).filter(mode => GAME_STAGE_MAP[mode] === stage);
 }
 
+/* ============================================================
+   🧭 §3 오케스트레이터 Phase 1(규칙 기반) — learning-theory-roadmap.md Part 2 §3.
+   "오늘 이 학습자에게 어떤 게임을 추천할까"를 계산하는 최초 버전.
+
+   범위: Part 2 §2에서 미뤄뒀던 "항목별 단계 이동 규칙"을 전체 30여 개 게임 모드로
+   한 번에 일반화하지 않고, 이미 3채널(재인·회상·발화) SRS 통계가 갖춰진
+   히라가나 학습 축에만 우선 적용함(회귀 리스크가 가장 낮고, §1 진단 4개 필드를
+   실제로 연결해보는 목적에는 이 정도 범위로도 충분). 다른 게임 카테고리(단어 퀴즈,
+   문장 조합 등)로 넓히는 것은 별도 세션의 다음 과제로 남겨둠.
+   ============================================================ */
+
+/* 히라가나 한 글자가 지금 A~E 중 어느 단계에 있는지 판정.
+   - 세 채널(hsStats 재인/hwStats 회상/hrStats 발화) 중 아무것도 시도한 적 없으면 'A'
+   - computeLtmStatus가 이미 '장기기억 정착'으로 판단했으면 'E'
+   - 발화(hr)까지 일정 단계 이상 진행됐으면 'D', 회상(hw)이면 'C', 그 외 시도만 있으면 'B' */
+function computeCharGameStage(ch) {
+  const hs = hsStats.getStat(ch);
+  const hw = hwStats.getStat(ch);
+  const hr = hrStats.getStat(ch);
+  const attempted = (stat) => (stat.correct + stat.wrong) > 0;
+
+  if (!attempted(hs) && !attempted(hw) && !attempted(hr)) return 'A';
+
+  const status = computeLtmStatus(ch);
+  if (status.level === 'stable') return 'E';
+  if (attempted(hr) && hr.srsStage >= 1) return 'D';
+  if (attempted(hw) && hw.srsStage >= 2) return 'C';
+  return 'B';
+}
+
+/* 활성 학습 세트(getActiveCharList) 글자들이 지금 A~E에 얼마나 분포돼 있는지 집계 */
+function computeActiveSetStageDistribution() {
+  const chars = getActiveCharList().map(item => item.ch);
+  const dist = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  chars.forEach(ch => { dist[computeCharGameStage(ch)] += 1; });
+  return { dist, total: chars.length };
+}
+
+/* 진단 프로필(§1의 4개 필드)로 학습자 성향을 3분류.
+   - phonoDiscrimination(청지각 변별력)이 낮거나, assocLearningRate가 'slow'이거나,
+     workingMemorySpan(작업기억 스팬)이 낮으면 → 'cautious'(신중한 학습자, A단계 비중↑)
+   - assocLearningRate가 'fast'이면서 작업기억도 넉넉하거나, priorKnowledgeLevel(사전지식)이
+     높으면 → 'fast'(빠른 습득자, A단계는 최소화하고 D·E 비중↑)
+   - 그 외는 'normal' */
+function classifyLearnerTendency(profile) {
+  const rate = profile.assocLearningRate;
+  const wms = typeof profile.workingMemorySpan === 'number' ? profile.workingMemorySpan : null;
+  const prior = typeof profile.priorKnowledgeLevel === 'number' ? profile.priorKnowledgeLevel : null;
+  const phono = typeof profile.phonoDiscrimination === 'number' ? profile.phonoDiscrimination : null;
+
+  if (rate === 'slow' || (wms !== null && wms <= 4) || (phono !== null && phono < 0.6)) {
+    return 'cautious';
+  }
+  if ((rate === 'fast' && (wms === null || wms >= 6)) || (prior !== null && prior >= 70)) {
+    return 'fast';
+  }
+  return 'normal';
+}
+
+/* 오늘 세션에 어떤 게임을 추천할지 정하는 Phase 1 규칙 기반 함수.
+   1) 진단 프로필로 목표 단계 비율(LEARNER_STAGE_RATIO)을 정하고
+   2) 활성 세트 글자들의 실제 현재 단계 분포를 구한 뒤
+   3) 목표 대비 가장 부족한(비중이 낮은) 단계 하나를 골라 그 단계에 맞는 게임을 추천함.
+   E단계가 가장 부족하면 특정 게임 대신 기존 복습 세트(startReviewSession)를 추천함. */
+function pickNextGameForSession() {
+  const profile = loadLearnerProfile();
+  const tendency = classifyLearnerTendency(profile);
+  const targetRatio = LEARNER_STAGE_RATIO[tendency];
+
+  const { dist, total } = computeActiveSetStageDistribution();
+  if (total === 0) {
+    return { stage: 'A', mode: 'exposure', tendency, reason: '아직 활성화된 글자가 없어요 — 가볍게 듣기부터 시작해봐요' };
+  }
+
+  let worstStage = 'A';
+  let worstGap = -Infinity;
+  ['A', 'B', 'C', 'D', 'E'].forEach(stage => {
+    const actualRatio = dist[stage] / total;
+    const gap = targetRatio[stage] - actualRatio;
+    if (gap > worstGap) { worstGap = gap; worstStage = stage; }
+  });
+
+  const stageLabel = GAME_STAGE_INFO[worstStage] ? GAME_STAGE_INFO[worstStage].label : worstStage;
+
+  if (worstStage === 'E') {
+    return {
+      stage: 'E', mode: null, useReviewSession: true, tendency,
+      reason: `이미 잘 아는 글자들을 새 맥락에서 다시 만나 "${stageLabel}"할 시간이에요`
+    };
+  }
+
+  return {
+    stage: worstStage, mode: STAGE_TO_HIRAGANA_MODE[worstStage], tendency,
+    reason: `지금 배우는 글자 중 "${stageLabel}" 단계 비중이 목표보다 낮아요`
+  };
+}
+
+/* "오늘의 추천" 배너 — 상위 메뉴 화면 상단에 pickNextGameForSession() 결과를 보여줌.
+   추천 결과는 startRecommendedGame()에서 그대로 쓸 수 있게 모듈 전역에 잠깐 저장해둠. */
+let lastSessionRecommendation = null;
+
+function renderTodayRecommendation() {
+  const banner = document.getElementById('todayRecommendBanner');
+  if (!banner) return;
+
+  loadActiveSetStateIfNeeded();
+  hsStats.load();
+  hwStats.load();
+  hrStats.load();
+
+  const rec = pickNextGameForSession();
+  lastSessionRecommendation = rec;
+
+  const stageEmoji = { A: '👂', B: '🔍', C: '✍️', D: '🗣️', E: '🌱' };
+  const stageLabel = rec.stage === 'E' ? '유지·재맥락화' : (GAME_STAGE_INFO[rec.stage] ? GAME_STAGE_INFO[rec.stage].label : rec.stage);
+
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <div class="today-recommend-body">
+      <div class="today-recommend-emoji">${stageEmoji[rec.stage] || '🎯'}</div>
+      <div class="today-recommend-text">
+        <div class="today-recommend-title">오늘의 추천 · ${stageLabel}</div>
+        <div class="today-recommend-desc">${rec.reason}</div>
+      </div>
+    </div>
+    <button class="today-recommend-btn" onclick="startRecommendedGame()">지금 시작하기</button>
+  `;
+}
+
+function startRecommendedGame() {
+  if (!lastSessionRecommendation) return;
+  if (lastSessionRecommendation.useReviewSession) {
+    startReviewSession();
+    return;
+  }
+  if (lastSessionRecommendation.mode) {
+    launchGame(lastSessionRecommendation.mode);
+  }
+}
+
 function hideAllMenuPanels(){
   ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel', 'menuTheoryLevel'].forEach(id => {
     const el = document.getElementById(id);
@@ -10189,6 +10329,7 @@ function showTopMenu(){
   currentMenuCategoryId = null;
   hideAllMenuPanels();
   document.getElementById('menuTopLevel').style.display = 'block';
+  renderTodayRecommendation();
 }
 
 /* 게임을 고르면 기존 switchMode()로 해당 모드를 실제로 활성화한 뒤,
@@ -10285,6 +10426,7 @@ document.addEventListener('fullscreenchange', () => {
   updateMatchGridAvailability();
   document.body.classList.toggle('gentle-mode', isGentleFeedbackMode());
   renderTopMenu();
+  renderTodayRecommendation();
 })();
 
 // PWA 설치/오프라인 지원을 위한 서비스워커 등록

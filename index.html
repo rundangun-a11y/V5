@@ -1633,6 +1633,49 @@
     cursor: pointer;
   }
 
+  /* 🧭 §3 오케스트레이터 Phase 1 — 상위 메뉴 상단 "오늘의 추천" 배너 */
+  .today-recommend-card {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--washi-deep);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin: 4px 0 14px;
+  }
+  .today-recommend-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .today-recommend-emoji { font-size: 24px; line-height: 1; flex-shrink: 0; }
+  .today-recommend-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--indigo);
+    margin-bottom: 2px;
+  }
+  .today-recommend-desc {
+    font-size: 11.5px;
+    color: #7a7364;
+    line-height: 1.4;
+  }
+  .today-recommend-btn {
+    flex-shrink: 0;
+    border: none;
+    background: var(--hanko);
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
   /* 📚 학습이론 패널 — 앱에 적용된 장기기억 관련 이론/기능을 일러스트와 함께 설명 */
   .theory-intro {
     font-size: 13.5px;
@@ -4162,6 +4205,7 @@
   <!-- 🗂️ 상위 메뉴: 기능 영역을 먼저 고릅니다 -->
   <div class="menu-level" id="menuTopLevel">
     <div class="menu-desc">배우고 싶은 영역을 먼저 골라주세요</div>
+    <div id="todayRecommendBanner" class="today-recommend-card" style="display:none;"></div>
     <div class="menu-grid" id="menuTopGrid"></div>
   </div>
 
@@ -5948,7 +5992,7 @@
     <span style="width:64px;"></span>
   </div>
 
-  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 12가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
+  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 13가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
 
   <!-- 1. 에빙하우스 망각곡선 -->
   <div class="theory-card">
@@ -6293,6 +6337,35 @@
     <div class="theory-card-desc">같은 글자를 <b>매번 똑같은 모양·목소리로만</b> 만나면, 그 특정 형태에만 종속된 얕은 기억이 만들어져요. 자형이나 목소리 톤을 조금씩 바꿔서 접하면, 글자의 <b>본질</b>을 자형과 무관하게 알아보는 더 튼튼한 기억이 만들어져요.</div>
     <div class="theory-card-desc" style="margin-top:8px;">단, 손글씨 쓰기 연습의 <b>획순 트레이싱 가이드</b>는 예외예요 — 획순 정확도는 표준 자형에 의존하기 때문에 절대 변주하지 않아요.</div>
     <div class="theory-card-applied">📍 적용: 카드찾기 문제의 글자 카드와 읽기(발화) 문제의 목표 글자는 등장할 때마다 3종 폰트 중 하나로 무작위 표시되고(<code>pickCharFontVariant()</code>), 카드찾기·쓰기 게임의 발음 재생은 매번 속도/음높이가 살짝(±5%) 흔들려요(<code>speakTTS()</code>의 <code>jitter</code> 옵션).</div>
+  </div>
+
+  <!-- 13. §3 오케스트레이터 Phase 1 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🧭</span>
+      <span class="theory-card-title">오늘의 추천 — 나에게 맞는 순서로 배워요</span>
+      <span class="theory-card-tag">Personalized Orchestration (Phase 1)</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="30" y="30" font-size="13" text-anchor="middle" fill="var(--indigo)">진단 프로필</text>
+        <text x="30" y="48" font-size="18" text-anchor="middle">🧑</text>
+        <path d="M55,40 L100,40" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr8)"/>
+        <text x="130" y="30" font-size="13" text-anchor="middle" fill="var(--indigo)">목표 비율</text>
+        <text x="130" y="48" font-size="18" text-anchor="middle">👂🔍✍️🗣️🌱</text>
+        <path d="M160,40 L205,40" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr8)"/>
+        <text x="222" y="30" font-size="13" text-anchor="middle" fill="var(--hanko)">오늘 추천</text>
+        <text x="222" y="52" font-size="20" text-anchor="middle">🎯</text>
+        <defs>
+          <marker id="arr8" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">모든 아이가 똑같은 순서로 배울 필요는 없어요. 사전지식·작업기억·연상학습 속도·청지각 변별력 같은 <b>진단 결과</b>를 바탕으로 "노출/재인/회상/발화/유지" 5단계를 얼마나 섞어줄지 목표 비율을 정하고, 지금 배우는 글자들이 실제로 어느 단계에 몰려 있는지와 비교해 <b>가장 부족한 단계</b>의 게임을 추천해요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">아직은 규칙 기반의 1단계 버전이에요 — 히라가나 학습(카드찾기·쓰기·읽기)에만 우선 적용했고, 실제 성과를 보며 비율을 스스로 다듬는 것은 다음 단계 과제로 남겨뒀어요.</div>
+    <div class="theory-card-applied">📍 적용: 상위 메뉴 상단의 "오늘의 추천" 카드(<code>renderTodayRecommendation()</code>)가 <code>pickNextGameForSession()</code>으로 계산된 추천을 보여주고, "지금 시작하기"를 누르면 해당 게임(또는 복습 세트)로 바로 이동해요.</div>
   </div>
 
 </div>
