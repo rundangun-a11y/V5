@@ -2918,6 +2918,38 @@ const ADJECTIVE_SETS = [
   }
 ];
 
+/* 🎧 청지각 변별력(Phonological Discrimination) 진단용 미니멀 페어.
+   learning-theory-roadmap.md Part 2 §1-1. 한국어 화자가 특히 헷갈려하는(또는 일본어 학습
+   초반에 자주 혼동하는) 모라 쌍 10개를 골라둠 — 청음/탁음 대비(か/が, た/だ, は/ば),
+   자음 조음점이 가까운 쌍(し/ひ, ら/な, り/に), 요음-직음 대비(つ/ちゅ, す/しゅ, ざ/じゃ),
+   그리고 한국어에 없는 마찰음 대비(つ/す)까지 섞어 난이도를 다양화했음.
+   각 쌍은 { a, b } 두 모라만 담고, 실제 "같다/다르다" 배정(둘 다 a로 재생할지, a·b를 섞어
+   재생할지)은 로직 쪽(logic.js의 generatePhonoQuestion)에서 매 문제 무작위로 정함. */
+const PHONO_MINIMAL_PAIRS = [
+  { a: 'つ', b: 'す' },
+  { a: 'し', b: 'ひ' },
+  { a: 'ざ', b: 'じゃ' },
+  { a: 'ら', b: 'な' },
+  { a: 'は', b: 'ば' },
+  { a: 'か', b: 'が' },
+  { a: 'た', b: 'だ' },
+  { a: 'つ', b: 'ちゅ' },
+  { a: 'す', b: 'しゅ' },
+  { a: 'り', b: 'に' }
+];
+
+/* 🔗 연상학습 속도(Paired-Associate Learning Rate) 진단용 기호-소리 쌍.
+   learning-theory-roadmap.md Part 2 §1-3. 히라가나/기존 어휘 지식이 결과에 영향을 주지 않도록,
+   실제 문자가 아닌 추상 도형(◆▲●■★)과 실제 뜻이 없는 무의미 카타카나 단어를 짝지어둠.
+   symbol은 화면 표시용, name은 TTS로 읽고 정답 선택지 텍스트로도 그대로 씀. */
+const PAL_SYMBOL_SOUND_PAIRS = [
+  { symbol: '◆', name: 'タポ' },
+  { symbol: '▲', name: 'ケニ' },
+  { symbol: '●', name: 'ヌソ' },
+  { symbol: '■', name: 'ミヘ' },
+  { symbol: '★', name: 'ロズ' }
+];
+
 const MENU_CATEGORIES = [
   {
     id: 'quiz-choice', title: '객관식 퀴즈', emoji: '❓',
@@ -3008,4 +3040,41 @@ const MENU_CATEGORIES = [
     ]
   }
 ];
+
+/* 🪜 게임 유형 → 학습 단계 매핑 — learning-theory-roadmap.md Part 2 §2.
+   이미 구현된 히라가나 3중 검증(재인·회상·발화, computeLtmStatus)을 히라가나 밖 게임
+   30여 개 전체로 일반화하기 위한 첫 단계. "어떤 게임이 A~E 중 어느 학습 단계에
+   해당하는가"만 정의한 정적 매핑이며, "이 항목이 지금 몇 단계인지"를 실제 성과로
+   판정하는 로직(§3 오케스트레이터)은 아직 이 파일에 없음 — 그 판정 로직이 참조할
+   입력 데이터로 먼저 정리해둔 것. */
+const GAME_STAGE_INFO = {
+  A: { label: '최초 노출', desc: '낮은 부담으로 형태·소리·의미를 처음 만나는 단계' },
+  B: { label: '재인 연습', desc: '"보면 안다" 수준을 형성하는 단계' },
+  C: { label: '회상 연습', desc: '"스스로 떠올려 쓴다" 수준을 형성하는 단계' },
+  D: { label: '발화·전이', desc: '실제 사용 맥락에서 생성·응용하는 단계' },
+  E: {
+    label: '유지·재맥락화',
+    desc: '이미 아는 것을 새 맥락에서 다시 만나 장기 정착시키는 단계. ' +
+          '특정 게임 모드에 고정되지 않고 복습 세트(기존 startReviewSession)나 ' +
+          'A단계 콘텐츠(이야기·노래) 재감상으로 이뤄지므로 GAME_STAGE_MAP에는 없음.'
+  }
+};
+
+const GAME_STAGE_MAP = {
+  // A. 최초 노출 — 이야기·노래 감상 + 듣기 전용 학습
+  storybook: 'A', emojiStorybook: 'A', ebook: 'A', karaoke: 'A', songs: 'A',
+  pronounce: 'A', exposure: 'A', scene: 'A',
+
+  // B. 재인 연습 — 객관식 퀴즈 + 카드 매칭·기억력
+  quiz: 'B', audioEmoji: 'B', riddle: 'B', qa: 'B', shop: 'B', lifeqa: 'B',
+  hiraganaSpeed: 'B', adjective: 'B',
+  matching: 'B', linematch: 'B', wordMemory: 'B', eawase: 'B', silhouette: 'B', kanjiCards: 'B',
+
+  // C. 회상 연습 — 소리·철자 맞추기 + 손글씨 쓰기 연습
+  spelling: 'C', onomatopoeia: 'C',
+  writing: 'C', hiraganaWrite: 'C', trace: 'C', worksheet: 'C', dakuonTest: 'C',
+
+  // D. 발화·전이 — 말하기(음성 인식) + 문장·단어 조합 + 탐색 퍼즐
+  speech: 'D', hiraganaRead: 'D', sentence: 'D', compound: 'D', wordsearch: 'D'
+};
 

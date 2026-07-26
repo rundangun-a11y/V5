@@ -1854,6 +1854,34 @@ function switchMode(mode) {
     stopHrListening();
     getAudioContext();
     initAdjectiveGame();
+  } else if (mode === 'placement') {
+    document.getElementById('placementMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    getAudioContext();
+    initPlacementQuiz();
+  } else if (mode === 'phonoTest') {
+    document.getElementById('phonoTestMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    getAudioContext();
+    initPhonoTest();
+  } else if (mode === 'wmsSpan') {
+    document.getElementById('wmsSpanMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    getAudioContext();
+    initWmsSpanTest();
+  } else if (mode === 'palTest') {
+    document.getElementById('palTestMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    getAudioContext();
+    initPalTest();
   }
   if (mode !== 'scene') stopSceneAutoplay();
   if (mode !== 'songs') stopSongPlayback();
@@ -2257,6 +2285,615 @@ const quizGame = createWordChoiceQuizGame({
 function initQuizGame() { quizGame.init(); }
 function startQuizGame() { quizGame.start(); }
 function generateQuiz() { quizGame.generateQuiz(); }
+
+/* 🎯 진단 기반 개인별 커리큘럼 오케스트레이션(Part 2, learning-theory-roadmap.md §1) —
+   "이 학습자는 어떤 사람인가"를 저장해두는 프로필. 아직은 4번(사전지식 배치 퀴즈) 결과만
+   채워지고, 나머지 필드(청지각 변별력/작업기억 스팬/연상학습 속도)는 각각의 진단 미니게임을
+   구현하는 다음 세션들에서 하나씩 채워질 예정. "1회성 확정"이 아니라 계속 갱신되는 살아있는
+   프로필이라, 저장 시 기존 값을 항상 병합(merge)하고 통째로 덮어쓰지 않는다. */
+const LEARNER_PROFILE_KEY = 'kotobaLearnerProfile';
+
+function loadLearnerProfile() {
+  let profile = null;
+  try {
+    const raw = localStorage.getItem(LEARNER_PROFILE_KEY);
+    profile = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    profile = null;
+  }
+  if (!profile || typeof profile !== 'object') profile = {};
+  return profile;
+}
+
+function saveLearnerProfilePatch(patch) {
+  try {
+    const profile = loadLearnerProfile();
+    Object.assign(profile, patch, { lastRecalibratedAt: Date.now() });
+    localStorage.setItem(LEARNER_PROFILE_KEY, JSON.stringify(profile));
+  } catch (e) {
+    /* 저장 실패해도 진단 결과 화면 자체는 그대로 보여줌 */
+  }
+}
+
+/* 🎯 사전지식 배치 퀴즈 (Adaptive Placement Quiz) — 진단 4가지 중 리스크가 가장 낮은 항목.
+   기존 연령대 필터(ageLevelSelect, currentAppLevel)가 이미 6~42개월 8단계로 나뉘어 있고
+   DICTIONARY의 모든 단어에 그 8단계 중 하나가 level로 매겨져 있어, 별도 문제 데이터 없이
+   기존 quiz 화면 포맷(발음 듣고 4지선다)만 재사용해 적응형으로 난이도를 조정한다.
+   맞히면 단계를 올리고 틀리면 내리되, 매 문제마다 이동 폭(step)을 절반으로 줄여
+   이진탐색처럼 정답 근처로 수렴시킨다(고전적인 적응형 검사 방식). */
+const PLACEMENT_AGE_LEVELS = [6, 9, 12, 18, 24, 30, 36, 42]; // ageLevelSelect 버튼과 동일한 8단계
+const PLACEMENT_QUESTION_COUNT = 6;
+const PLACEMENT_START_INDEX = 3; // 18개월 — 극단으로 치우치지 않은 중간값에서 시작
+
+let placementLevelIndex = PLACEMENT_START_INDEX;
+let placementStep = 2;
+let placementQuestionNum = 0;
+let placementCorrectCount = 0;
+let placementCurrentWord = null;
+let placementIsAnswering = false;
+let placementAdvanceTimer = null;
+
+function initPlacementQuiz() {
+  clearTimeout(placementAdvanceTimer);
+  document.getElementById('placementIntroScreen').style.display = '';
+  document.getElementById('placementQuestionScreen').style.display = 'none';
+  document.getElementById('placementResultScreen').style.display = 'none';
+}
+
+function startPlacementQuiz() {
+  clearTimeout(placementAdvanceTimer);
+  placementLevelIndex = PLACEMENT_START_INDEX;
+  placementStep = 2;
+  placementQuestionNum = 0;
+  placementCorrectCount = 0;
+  placementIsAnswering = false;
+
+  document.getElementById('placementIntroScreen').style.display = 'none';
+  document.getElementById('placementResultScreen').style.display = 'none';
+  document.getElementById('placementQuestionScreen').style.display = '';
+
+  generatePlacementQuestion();
+}
+
+function speakPlacementCurrent() {
+  if (!placementCurrentWord) return;
+  speakTTS(placementCurrentWord.jp);
+}
+
+function generatePlacementQuestion() {
+  if (placementQuestionNum >= PLACEMENT_QUESTION_COUNT) {
+    showPlacementResult();
+    return;
+  }
+
+  placementIsAnswering = false;
+  document.getElementById('placementProgress').textContent = placementQuestionNum + 1;
+  document.getElementById('placementAudioBtn').disabled = false;
+
+  // 후보 단계(level)에 정확히 매칭되는 단어 중에서 출제 — 없으면(단어 수가 적은 극단 레벨)
+  // 그 단계 이하 전체에서 고름
+  const candidateLevel = PLACEMENT_AGE_LEVELS[placementLevelIndex];
+  let levelPool = DICTIONARY.filter(w => w.level === candidateLevel);
+  if (levelPool.length === 0) levelPool = DICTIONARY.filter(w => w.level <= candidateLevel);
+  if (levelPool.length === 0) levelPool = DICTIONARY;
+
+  const correctWord = levelPool[Math.floor(Math.random() * levelPool.length)];
+  placementCurrentWord = correctWord;
+
+  const emojiEl = document.getElementById('placementEmoji');
+  emojiEl.innerHTML = emojiVisualHTML(correctWord);
+  emojiEl.style.animation = 'none';
+  void emojiEl.offsetWidth;
+  emojiEl.style.animation = 'quizAppear .4s cubic-bezier(.175, .885, .32, 1.275)';
+
+  speakPlacementCurrent();
+
+  // 오답 선택지는 전체 사전에서 골라 (연령대 필터와 무관하게) 항상 4개를 채울 수 있게 함
+  const choices = [correctWord];
+  const distractorPool = DICTIONARY.filter(w => w.jp !== correctWord.jp);
+  while (choices.length < 4 && distractorPool.length > 0) {
+    const rIdx = Math.floor(Math.random() * distractorPool.length);
+    choices.push(distractorPool.splice(rIdx, 1)[0]);
+  }
+  choices.sort(() => Math.random() - 0.5);
+
+  const optionsContainer = document.getElementById('placementOptions');
+  optionsContainer.innerHTML = '';
+  choices.forEach(word => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-btn';
+    btn.dataset.jp = word.jp;
+    btn.innerHTML = `<span>${word.jp}</span>`;
+    btn.addEventListener('click', () => selectPlacementAnswer(btn, word));
+    optionsContainer.appendChild(btn);
+  });
+}
+
+function selectPlacementAnswer(selectedButton, word) {
+  if (placementIsAnswering) return;
+  placementIsAnswering = true;
+  document.getElementById('placementAudioBtn').disabled = true;
+
+  const isCorrect = word.jp === placementCurrentWord.jp;
+  const allButtons = document.querySelectorAll('#placementOptions .quiz-btn');
+
+  if (isCorrect) {
+    selectedButton.classList.add('correct');
+    placementCorrectCount += 1;
+    playCorrectSound();
+  } else {
+    selectedButton.classList.add('wrong');
+    allButtons.forEach(btn => {
+      if (btn.dataset.jp === placementCurrentWord.jp) btn.classList.add('correct-hint');
+    });
+    playWrongSound();
+  }
+
+  // 이진탐색처럼: 맞으면 단계 상승, 틀리면 하강. 이동 폭은 문제마다 절반으로 줄여 수렴시킴
+  placementLevelIndex = isCorrect
+    ? Math.min(placementLevelIndex + placementStep, PLACEMENT_AGE_LEVELS.length - 1)
+    : Math.max(placementLevelIndex - placementStep, 0);
+  placementStep = Math.max(1, Math.ceil(placementStep / 2));
+  placementQuestionNum += 1;
+
+  placementAdvanceTimer = setTimeout(() => {
+    generatePlacementQuestion();
+  }, 900);
+}
+
+function showPlacementResult() {
+  document.getElementById('placementQuestionScreen').style.display = 'none';
+  document.getElementById('placementResultScreen').style.display = '';
+
+  const finalLevel = PLACEMENT_AGE_LEVELS[placementLevelIndex];
+  const priorKnowledgeLevel = Math.round(
+    (placementLevelIndex / (PLACEMENT_AGE_LEVELS.length - 1)) * 100
+  );
+  saveLearnerProfilePatch({ priorKnowledgeLevel, diagnosedAt: Date.now() });
+
+  const levelLabel = finalLevel === 42 ? '36개월 초과' : `${finalLevel}개월 이하`;
+  document.getElementById('placementResultText').innerHTML =
+    `<b>${placementCorrectCount}</b> / ${PLACEMENT_QUESTION_COUNT}문제를 맞혔어요.<br>` +
+    `지금은 <b>${levelLabel}</b> 수준의 단어가 잘 맞을 것 같아요!`;
+}
+
+/* 진단 결과를 실제로 적용 — 기존 연령대 필터(changeAppLevel)를 바로 그 레벨로 바꿔줌 */
+function applyPlacementResult() {
+  changeAppLevel(PLACEMENT_AGE_LEVELS[placementLevelIndex]);
+  backToCategoryFromGame();
+}
+
+/* 🎧 청지각 변별력 진단 (Phonological Discrimination) — learning-theory-roadmap.md
+   Part 2 §1-1. 신규 문제 화면을 새로 만들되, 사전지식 배치 퀴즈(placement)와 같은
+   "인트로 → 문제 → 결과" 3단계 구조·클래스(.quiz-container, .hs-start-desc, .quiz-audio-btn,
+   .hs-result-title 등)를 그대로 재사용해 톤을 통일함. PHONO_MINIMAL_PAIRS(data.js)에서
+   모라 쌍을 하나 뽑아, 매 문제 50% 확률로 "같은 소리 두 번" 또는 "서로 다른 두 소리"를 순서
+   섞어 재생하고, 아이가 "같아요/달라요"를 고르게 함. 정답 여부만으로 채점하고, 최종 정확도
+   (0.0~1.0)를 learnerProfile.phonoDiscrimination에 저장함. */
+const PHONO_QUESTION_COUNT = 8;
+const PHONO_REPLAY_GAP_MS = 900; // 두 소리 사이 간격 — 너무 짧으면 변별이 어렵고 너무 길면 첫 소리를 잊어버림
+
+let phonoQuestionNum = 0;
+let phonoCorrectCount = 0;
+let phonoCurrentSounds = null; // 이번 문제에서 실제로 재생할 [첫소리, 둘째소리] — data.js 원본 객체는 건드리지 않음
+let phonoIsSameAnswer = false; // 이번 문제의 실제 정답(같음/다름)
+let phonoIsAnswering = false;
+let phonoAdvanceTimer = null;
+let phonoPlaybackTimer = null;
+
+function initPhonoTest() {
+  clearTimeout(phonoAdvanceTimer);
+  clearTimeout(phonoPlaybackTimer);
+  document.getElementById('phonoIntroScreen').style.display = '';
+  document.getElementById('phonoQuestionScreen').style.display = 'none';
+  document.getElementById('phonoResultScreen').style.display = 'none';
+}
+
+function startPhonoTest() {
+  clearTimeout(phonoAdvanceTimer);
+  clearTimeout(phonoPlaybackTimer);
+  phonoQuestionNum = 0;
+  phonoCorrectCount = 0;
+  phonoIsAnswering = false;
+
+  document.getElementById('phonoIntroScreen').style.display = 'none';
+  document.getElementById('phonoResultScreen').style.display = 'none';
+  document.getElementById('phonoQuestionScreen').style.display = '';
+
+  generatePhonoQuestion();
+}
+
+/* 이번 문제의 소리 두 개를 순서(재생 순서)까지 정해 배열로 반환 —
+   같은 문제라도 매번 새로 뽑아야 하므로 재생할 때마다 호출하지 않고 문제 생성 시 한 번만 고정 */
+function pickPhonoSounds(pair, isSame) {
+  if (isSame) {
+    // 같음 문제: a 또는 b 중 하나를 무작위로 골라 두 번 재생
+    const sound = Math.random() < 0.5 ? pair.a : pair.b;
+    return [sound, sound];
+  }
+  // 다름 문제: a·b 순서를 무작위로 섞어 재생
+  return Math.random() < 0.5 ? [pair.a, pair.b] : [pair.b, pair.a];
+}
+
+function generatePhonoQuestion() {
+  if (phonoQuestionNum >= PHONO_QUESTION_COUNT) {
+    showPhonoResult();
+    return;
+  }
+
+  phonoIsAnswering = false;
+  document.getElementById('phonoProgress').textContent = phonoQuestionNum + 1;
+  document.getElementById('phonoAudioBtn').disabled = false;
+  document.querySelectorAll('#phonoOptions .quiz-btn').forEach(btn => {
+    btn.classList.remove('correct', 'wrong', 'correct-hint');
+  });
+
+  const pair = PHONO_MINIMAL_PAIRS[Math.floor(Math.random() * PHONO_MINIMAL_PAIRS.length)];
+  phonoIsSameAnswer = Math.random() < 0.5;
+  phonoCurrentSounds = pickPhonoSounds(pair, phonoIsSameAnswer);
+
+  playPhonoPair();
+}
+
+/* 두 소리를 PHONO_REPLAY_GAP_MS 간격으로 순서대로 재생 — "다시 듣기" 버튼으로 언제든 재생 가능 */
+function playPhonoPair() {
+  clearTimeout(phonoPlaybackTimer);
+  if (!phonoCurrentSounds) return;
+  const [first, second] = phonoCurrentSounds;
+  speakTTS(first);
+  phonoPlaybackTimer = setTimeout(() => {
+    speakTTS(second);
+  }, PHONO_REPLAY_GAP_MS);
+}
+
+function selectPhonoAnswer(guessedSame, selectedButton) {
+  if (phonoIsAnswering) return;
+  phonoIsAnswering = true;
+  document.getElementById('phonoAudioBtn').disabled = true;
+
+  const isCorrect = guessedSame === phonoIsSameAnswer;
+  if (isCorrect) {
+    selectedButton.classList.add('correct');
+    phonoCorrectCount += 1;
+    playCorrectSound();
+  } else {
+    selectedButton.classList.add('wrong');
+    playWrongSound();
+  }
+
+  phonoQuestionNum += 1;
+  phonoAdvanceTimer = setTimeout(() => {
+    generatePhonoQuestion();
+  }, 900);
+}
+
+function showPhonoResult() {
+  clearTimeout(phonoPlaybackTimer);
+  document.getElementById('phonoQuestionScreen').style.display = 'none';
+  document.getElementById('phonoResultScreen').style.display = '';
+
+  const accuracy = phonoCorrectCount / PHONO_QUESTION_COUNT;
+  saveLearnerProfilePatch({ phonoDiscrimination: accuracy, diagnosedAt: Date.now() });
+
+  let levelText;
+  if (accuracy >= 0.85) levelText = '아주 잘 구별해요! 비슷한 소리도 귀가 밝네요 👂✨';
+  else if (accuracy >= 0.6) levelText = '대체로 잘 구별해요. 헷갈리는 소리는 천천히 다시 들어보면 좋아요.';
+  else levelText = '비슷한 소리를 아직은 많이 헷갈려해요. 듣기 위주 학습으로 천천히 귀를 익혀볼게요.';
+
+  document.getElementById('phonoResultText').innerHTML =
+    `<b>${phonoCorrectCount}</b> / ${PHONO_QUESTION_COUNT}문제를 맞혔어요.<br>${levelText}`;
+}
+
+/* 🧩 작업기억 스팬 진단 (Working Memory Span) — learning-theory-roadmap.md Part 2 §1-2.
+   숫자 대신 색깔 도형 이모지를 사용 — 어린 학습자에게는 숫자 역순 암기보다 직관적이고,
+   히라가나/일본어 지식과도 무관해 순수하게 작업기억만 측정할 수 있음. 3개 스팬부터 시작해
+   맞힐 때마다 1개씩 늘리고(3→4→5…), 틀리는 순간 바로 종료해 "실패 직전 스팬"을 측정하는
+   고전적 스팬 테스트 방식(단, 시간 절약을 위해 레벨당 1회 시행만 봄 — 2회 시행 평균을 내는
+   정식 심리검사보다는 간이 버전). */
+const WMS_SHAPES = ['🔴', '🔵', '🟡', '🟢', '🟣', '🟠', '⚫', '⭐', '❤️']; // 최대 스팬(9)만큼 서로 다른 도형 9개
+const WMS_START_SPAN = 3;
+const WMS_MAX_SPAN = 9;
+const WMS_SHOW_INTERVAL_MS = 900; // 도형 하나가 화면에 보이는 시간
+const WMS_GAP_MS = 350; // 도형 사이 공백(다음 도형과 헷갈리지 않도록) / 마지막 도형 후 답변 화면 전환 전 대기
+
+let wmsCurrentSpan = WMS_START_SPAN;
+let wmsSequence = [];
+let wmsUserPicks = [];
+let wmsHighestCompletedSpan = 0; // 역순으로 맞게 고른 가장 긴 스팬 (0이면 시작 스팬부터 실패)
+let wmsShowTimer = null;
+
+function initWmsSpanTest() {
+  clearTimeout(wmsShowTimer);
+  document.getElementById('wmsIntroScreen').style.display = '';
+  document.getElementById('wmsShowScreen').style.display = 'none';
+  document.getElementById('wmsAnswerScreen').style.display = 'none';
+  document.getElementById('wmsResultScreen').style.display = 'none';
+}
+
+function startWmsSpanTest() {
+  clearTimeout(wmsShowTimer);
+  wmsCurrentSpan = WMS_START_SPAN;
+  wmsHighestCompletedSpan = 0;
+
+  document.getElementById('wmsIntroScreen').style.display = 'none';
+  document.getElementById('wmsResultScreen').style.display = 'none';
+
+  runWmsRound();
+}
+
+/* 이번 라운드(스팬 길이 wmsCurrentSpan)를 새로 시작 — 최대 스팬을 넘기면 바로 결과로 종료 */
+function runWmsRound() {
+  if (wmsCurrentSpan > WMS_MAX_SPAN) {
+    showWmsResult();
+    return;
+  }
+
+  document.getElementById('wmsAnswerScreen').style.display = 'none';
+  document.getElementById('wmsShowScreen').style.display = '';
+  document.getElementById('wmsSpanLabel').textContent = wmsCurrentSpan;
+
+  const pool = WMS_SHAPES.slice();
+  wmsSequence = [];
+  for (let i = 0; i < wmsCurrentSpan; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    wmsSequence.push(pool.splice(idx, 1)[0]);
+  }
+  wmsUserPicks = [];
+
+  playWmsSequence(0);
+}
+
+/* 도형을 하나씩 순서대로 재생 — 재생 중간에 빈 화면을 잠깐 끼워 넣어 도형이 바뀌는
+   순간을 명확히 구분되게 함(연속 재생 시 두 도형이 겹쳐 보이는 착시 방지) */
+function playWmsSequence(index) {
+  const emojiEl = document.getElementById('wmsShowEmoji');
+  if (index >= wmsSequence.length) {
+    wmsShowTimer = setTimeout(showWmsAnswerScreen, WMS_GAP_MS);
+    return;
+  }
+
+  emojiEl.textContent = wmsSequence[index];
+  emojiEl.style.animation = 'none';
+  void emojiEl.offsetWidth;
+  emojiEl.style.animation = 'quizAppear .3s cubic-bezier(.175, .885, .32, 1.275)';
+
+  wmsShowTimer = setTimeout(() => {
+    emojiEl.textContent = '';
+    wmsShowTimer = setTimeout(() => playWmsSequence(index + 1), WMS_GAP_MS);
+  }, WMS_SHOW_INTERVAL_MS);
+}
+
+function showWmsAnswerScreen() {
+  document.getElementById('wmsShowScreen').style.display = 'none';
+  document.getElementById('wmsAnswerScreen').style.display = '';
+  document.getElementById('wmsAnswerSpanLabel').textContent = wmsCurrentSpan;
+  document.getElementById('wmsPickedRow').innerHTML = '';
+
+  const shuffled = wmsSequence.slice().sort(() => Math.random() - 0.5);
+  const optionsEl = document.getElementById('wmsOptions');
+  optionsEl.innerHTML = '';
+  shuffled.forEach(shape => {
+    const btn = document.createElement('button');
+    btn.className = 'wms-shape-btn';
+    btn.textContent = shape;
+    btn.addEventListener('click', () => pickWmsShape(shape, btn));
+    optionsEl.appendChild(btn);
+  });
+}
+
+function pickWmsShape(shape, btnEl) {
+  if (btnEl.classList.contains('picked')) return;
+  if (wmsUserPicks.length >= wmsSequence.length) return;
+
+  wmsUserPicks.push(shape);
+  btnEl.classList.add('picked');
+
+  const chip = document.createElement('span');
+  chip.className = 'wms-picked-chip';
+  chip.textContent = shape;
+  document.getElementById('wmsPickedRow').appendChild(chip);
+
+  if (wmsUserPicks.length === wmsSequence.length) {
+    setTimeout(checkWmsAnswer, 400);
+  }
+}
+
+function checkWmsAnswer() {
+  const expected = wmsSequence.slice().reverse();
+  const isCorrect = expected.every((shape, i) => shape === wmsUserPicks[i]);
+
+  if (isCorrect) {
+    wmsHighestCompletedSpan = wmsCurrentSpan;
+    wmsCurrentSpan += 1;
+    runWmsRound();
+  } else {
+    showWmsResult();
+  }
+}
+
+function showWmsResult() {
+  clearTimeout(wmsShowTimer);
+  document.getElementById('wmsShowScreen').style.display = 'none';
+  document.getElementById('wmsAnswerScreen').style.display = 'none';
+  document.getElementById('wmsResultScreen').style.display = '';
+
+  // 한 번도 성공하지 못했으면(시작 스팬부터 실패) 시작 스팬-1로 기록 — 그 이하 능력이라는 뜻
+  const recordedSpan = wmsHighestCompletedSpan > 0 ? wmsHighestCompletedSpan : WMS_START_SPAN - 1;
+  saveLearnerProfilePatch({ workingMemorySpan: recordedSpan, diagnosedAt: Date.now() });
+
+  let levelText;
+  if (recordedSpan >= 7) levelText = '한 번에 기억하는 힘이 아주 좋아요! 새 글자를 여러 개씩 배워도 잘 따라올 것 같아요.';
+  else if (recordedSpan >= 5) levelText = '보통 수준으로 잘 기억해요. 지금 속도로 차근차근 늘려가면 좋아요.';
+  else levelText = '아직은 한 번에 기억하는 양이 적은 편이에요. 새 글자를 조금씩, 천천히 늘려가는 게 더 잘 맞을 것 같아요.';
+
+  document.getElementById('wmsResultText').innerHTML =
+    `한 번에 <b>${recordedSpan}개</b>까지 거꾸로 기억해냈어요.<br>${levelText}`;
+}
+
+/* 🔗 연상학습 속도 진단 (Paired-Associate Learning Rate) — learning-theory-roadmap.md Part 2 §1-3.
+   히라가나가 아닌 추상 도형(PAL_SYMBOL_SOUND_PAIRS, data.js)과 무의미 카타카나 이름을 짝지어
+   "노출(전체 쌍을 보여주고 이름을 들려줌) → 테스트(도형만 보여주고 이름 맞히기)"를 5라운드
+   반복한다. 라운드별 정확도가 몇 번 만에 오르는지를 보고 fast/medium/slow로 분류함으로써,
+   기존 지식(어휘력)의 영향 없이 순수한 "새 짝 암기 속도"만 측정하려는 목적. */
+const PAL_ROUNDS = 5;
+const PAL_EXPOSURE_SHOW_MS = 1100; // 노출 단계에서 쌍 하나가 보이는 시간
+const PAL_EXPOSURE_GAP_MS = 300;   // 노출 단계 쌍 사이 공백
+const PAL_ACCURACY_TARGET = 0.8;   // 이 정확도(5개 중 4개)에 처음 도달한 라운드로 속도를 판정
+
+let palCurrentRound = 1;
+let palRoundAccuracies = [];
+let palTestOrder = [];
+let palTestIndex = 0;
+let palRoundCorrectCount = 0;
+let palTimer = null;
+
+function initPalTest() {
+  clearTimeout(palTimer);
+  document.getElementById('palIntroScreen').style.display = '';
+  document.getElementById('palExposureScreen').style.display = 'none';
+  document.getElementById('palTestScreen').style.display = 'none';
+  document.getElementById('palResultScreen').style.display = 'none';
+}
+
+function startPalTest() {
+  clearTimeout(palTimer);
+  palCurrentRound = 1;
+  palRoundAccuracies = [];
+
+  document.getElementById('palIntroScreen').style.display = 'none';
+  document.getElementById('palResultScreen').style.display = 'none';
+
+  runPalRound();
+}
+
+/* 라운드(palCurrentRound)를 새로 시작 — 노출 단계부터 진행. 5라운드를 다 마치면 결과로 종료 */
+function runPalRound() {
+  if (palCurrentRound > PAL_ROUNDS) {
+    showPalResult();
+    return;
+  }
+
+  document.getElementById('palTestScreen').style.display = 'none';
+  document.getElementById('palExposureScreen').style.display = '';
+  document.getElementById('palRoundLabel').textContent = palCurrentRound;
+  document.getElementById('palRoundLabelTest').textContent = palCurrentRound;
+
+  playPalExposureSequence(0);
+}
+
+/* 도형-이름 쌍 전체를 하나씩 순서대로 보여주고 TTS로 이름을 읽어줌(부호화 단계) */
+function playPalExposureSequence(index) {
+  const symbolEl = document.getElementById('palExposureSymbol');
+  const nameEl = document.getElementById('palExposureName');
+
+  if (index >= PAL_SYMBOL_SOUND_PAIRS.length) {
+    palTimer = setTimeout(startPalTestPhase, PAL_EXPOSURE_GAP_MS);
+    return;
+  }
+
+  const pair = PAL_SYMBOL_SOUND_PAIRS[index];
+  symbolEl.textContent = pair.symbol;
+  nameEl.textContent = pair.name;
+  speakTTS(pair.name);
+
+  palTimer = setTimeout(() => {
+    symbolEl.textContent = '';
+    nameEl.textContent = '';
+    palTimer = setTimeout(() => playPalExposureSequence(index + 1), PAL_EXPOSURE_GAP_MS);
+  }, PAL_EXPOSURE_SHOW_MS);
+}
+
+/* 노출이 끝나면 도형 순서를 섞어 하나씩 "이 도형 이름이 뭐였죠?" 테스트 진행(인출 단계) */
+function startPalTestPhase() {
+  palTestOrder = PAL_SYMBOL_SOUND_PAIRS.map((_, i) => i).sort(() => Math.random() - 0.5);
+  palTestIndex = 0;
+  palRoundCorrectCount = 0;
+
+  document.getElementById('palExposureScreen').style.display = 'none';
+  document.getElementById('palTestScreen').style.display = '';
+
+  showPalTestQuestion();
+}
+
+function showPalTestQuestion() {
+  const pair = PAL_SYMBOL_SOUND_PAIRS[palTestOrder[palTestIndex]];
+  document.getElementById('palTestProgress').textContent = palTestIndex + 1;
+  document.getElementById('palTestSymbol').textContent = pair.symbol;
+
+  const options = PAL_SYMBOL_SOUND_PAIRS.map(p => p.name).sort(() => Math.random() - 0.5);
+  const optionsEl = document.getElementById('palTestOptions');
+  optionsEl.innerHTML = '';
+  options.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-btn';
+    btn.innerHTML = `<span>${name}</span>`;
+    btn.addEventListener('click', () => selectPalAnswer(name, pair.name, btn));
+    optionsEl.appendChild(btn);
+  });
+}
+
+function selectPalAnswer(picked, correctName, btnEl) {
+  document.querySelectorAll('#palTestOptions .quiz-btn').forEach(b => b.disabled = true);
+
+  const isCorrect = picked === correctName;
+  btnEl.classList.add(isCorrect ? 'correct' : 'wrong');
+  if (isCorrect) palRoundCorrectCount++;
+  else {
+    document.querySelectorAll('#palTestOptions .quiz-btn').forEach(b => {
+      if (b.textContent.trim() === correctName) b.classList.add('correct');
+    });
+  }
+
+  palTimer = setTimeout(() => {
+    palTestIndex++;
+    if (palTestIndex < palTestOrder.length) {
+      showPalTestQuestion();
+    } else {
+      finishPalRound();
+    }
+  }, 900);
+}
+
+function finishPalRound() {
+  const accuracy = palRoundCorrectCount / PAL_SYMBOL_SOUND_PAIRS.length;
+  palRoundAccuracies.push(accuracy);
+  palCurrentRound++;
+  runPalRound();
+}
+
+/* 정확도가 PAL_ACCURACY_TARGET(0.8)에 처음 도달한 라운드를 기준으로 fast/medium/slow 판정.
+   끝까지 도달 못 하면 'slow'로 기록 — 3단계 습득 속도는 §3 오케스트레이터에서
+   노출(A단계) 비중·재인→회상 전환 기준을 조정하는 입력값으로 쓸 계획(아직 미연동). */
+function computePalLearningRate(accuracies) {
+  const reachedIndex = accuracies.findIndex(a => a >= PAL_ACCURACY_TARGET);
+  if (reachedIndex === -1) return 'slow';
+  if (reachedIndex <= 1) return 'fast';   // 1~2라운드 만에 도달
+  if (reachedIndex <= 3) return 'medium'; // 3~4라운드 만에 도달
+  return 'slow';
+}
+
+function showPalResult() {
+  clearTimeout(palTimer);
+  document.getElementById('palExposureScreen').style.display = 'none';
+  document.getElementById('palTestScreen').style.display = 'none';
+  document.getElementById('palResultScreen').style.display = '';
+
+  const rate = computePalLearningRate(palRoundAccuracies);
+  saveLearnerProfilePatch({ assocLearningRate: rate, diagnosedAt: Date.now() });
+
+  const rateText = {
+    fast: '새로운 짝을 아주 빨리 외우는 편이에요! 새 글자를 배울 때도 노출은 짧게, 바로 문제를 풀어보는 게 잘 맞을 것 같아요.',
+    medium: '보통 속도로 새 짝을 익혀요. 지금처럼 차근차근 반복하면 잘 늘어갈 거예요.',
+    slow: '새로운 짝은 여러 번 봐야 익숙해지는 편이에요. 새 글자를 배울 때 노출 시간을 조금 더 넉넉하게 주는 게 좋을 것 같아요.'
+  }[rate];
+
+  const roundsText = palRoundAccuracies
+    .map((a, i) => `${i + 1}회차 ${Math.round(a * PAL_SYMBOL_SOUND_PAIRS.length)}/${PAL_SYMBOL_SOUND_PAIRS.length}`)
+    .join(' · ');
+
+  document.getElementById('palResultText').innerHTML =
+    `${roundsText}<br>${rateText}`;
+}
 
 /* 🎧 듣고 이모지 고르기 게임 설정 — 타이머·결과화면 없이 계속 이어지는 연습 모드 */
 const audioEmojiGame = createWordChoiceQuizGame({
@@ -9414,6 +10051,26 @@ let currentMenuCategoryId = null;
    하위 게임 목록이 아니라 전용 패널을 직접 엽니다 */
 const TOP_MENU_EXTRA_ITEMS = [
   {
+    id: 'placement', title: '시작 진단', emoji: '🎯',
+    desc: '문제 6개로 지금 수준을 가늠해서 알맞은 단어 범위를 추천해줘요',
+    action: () => launchGame('placement')
+  },
+  {
+    id: 'phonoTest', title: '소리 구별 진단', emoji: '👂',
+    desc: '비슷한 소리 8쌍을 듣고 같은지 다른지 맞혀서 귀가 얼마나 밝은지 확인해요',
+    action: () => launchGame('phonoTest')
+  },
+  {
+    id: 'wmsSpan', title: '기억 스팬 진단', emoji: '🧩',
+    desc: '도형을 순서대로 보여주고 거꾸로 기억해내는 힘을 확인해요',
+    action: () => launchGame('wmsSpan')
+  },
+  {
+    id: 'palTest', title: '새 짝 암기 속도 진단', emoji: '🔗',
+    desc: '처음 보는 도형과 이름을 몇 번 만에 외우는지 확인해요',
+    action: () => launchGame('palTest')
+  },
+  {
     id: 'settings', title: '설정', emoji: '⚙️',
     desc: '연령대·JLPT·주제별 단어 범위와 아기말투 재생을 설정해요',
     action: () => openMenuPanel('menuSettingsLevel')
@@ -9439,6 +10096,20 @@ const TOP_MENU_EXTRA_ITEMS = [
     action: () => openMenuPanel('menuTheoryLevel')
   }
 ];
+
+/* GAME_STAGE_MAP(data.js) 조회 헬퍼 — learning-theory-roadmap.md Part 2 §2.
+   §3 오케스트레이터가 "이 게임은 몇 단계인가"를 물어볼 때 사용할 예정(아직 호출부 없음).
+   매핑에 없는 모드(진단용 모드 등)는 null을 반환함. */
+function getGameStage(mode) {
+  return GAME_STAGE_MAP[mode] || null;
+}
+
+/* 특정 단계(A~D)에 해당하는 게임 모드 목록을 반환 — §3에서 "오늘 세션에 이 단계 게임을
+   몇 개 낼까" 정할 때 후보 풀로 사용할 예정(아직 호출부 없음). E단계는 특정 모드에
+   고정되지 않으므로(복습 세트/재감상) 여기서 조회 대상이 아님. */
+function getModesForStage(stage) {
+  return Object.keys(GAME_STAGE_MAP).filter(mode => GAME_STAGE_MAP[mode] === stage);
+}
 
 function hideAllMenuPanels(){
   ['menuCategoryLevel', 'menuSettingsLevel', 'menuWordcardsLevel', 'menuVideosLevel', 'menuLtmLevel', 'menuTheoryLevel'].forEach(id => {

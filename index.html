@@ -1198,6 +1198,53 @@
     75% { transform: translateX(6px); }
   }
 
+  /* 🧩 작업기억 스팬 진단(Working Memory Span) 전용 스타일 —
+     learning-theory-roadmap.md Part 2 §1-2. 도형을 순서대로 보여준 뒤 역순으로 고르게 하는
+     UI. 선택지 개수가 3~9개로 가변적이라 기존 2열 고정인 .quiz-options 대신 3열 그리드를
+     새로 둠. 디자인 시스템 변수(--washi, --sumi, --hanko, --line)를 그대로 재사용. */
+  .wms-options-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .wms-shape-btn {
+    background: var(--washi);
+    border: 2px solid var(--sumi);
+    border-radius: 12px;
+    padding: 14px 0;
+    font-size: 30px;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+    min-height: 64px;
+  }
+  .wms-shape-btn:hover:not(.picked) {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+  }
+  .wms-shape-btn.picked {
+    opacity: 0.35;
+    cursor: default;
+    border-color: var(--line);
+  }
+  .wms-picked-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 42px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+  .wms-picked-chip {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 22px;
+  }
+
   /* ⚡ 히라가나 스피드게임 전용 스타일 */
   .hs-container {
     background: var(--washi-deep);
@@ -5601,6 +5648,148 @@
           <button class="quiz-audio-btn" onclick="restartAdjectiveSet()">🔄 다시 하기</button>
           <button class="quiz-audio-btn" onclick="backToAdjShelf()">📋 목록으로</button>
         </div>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🎯 시작 진단(사전지식 배치 퀴즈): learning-theory-roadmap.md Part 2 §1-4.
+       기존 quiz 모드와 같은 발음 듣고 4지선다 포맷을 재사용하되, 문제마다 난이도(연령대 단계)를
+       적응형으로 조정해 아이의 현재 수준에 맞는 시작 레벨을 추천합니다. -->
+  <div id="placementMode" class="mode-content">
+    <div class="quiz-container">
+      <div id="placementIntroScreen">
+        <div class="hs-start-desc">몇 가지 문제를 풀면서 지금 어느 정도 수준인지 살짝 가늠해볼게요. 정답을 몰라도 괜찮아요, 편하게 골라보세요! 총 6문제예요.</div>
+        <button class="quiz-audio-btn" onclick="startPlacementQuiz()">🚀 진단 시작하기</button>
+      </div>
+
+      <div id="placementQuestionScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>문제: <span id="placementProgress">0</span>/6</div>
+        </div>
+        <div class="quiz-emoji" id="placementEmoji">❓</div>
+        <button class="quiz-audio-btn" id="placementAudioBtn" onclick="speakPlacementCurrent()">
+          🔊 다시 듣기
+        </button>
+        <div class="quiz-options" id="placementOptions">
+          <!-- JS가 선택지 4개를 생성합니다 -->
+        </div>
+      </div>
+
+      <div id="placementResultScreen" style="display:none;">
+        <div class="hs-result-title">🎯 진단 결과</div>
+        <div class="hs-result-row" id="placementResultText"></div>
+        <button class="quiz-audio-btn" onclick="applyPlacementResult()">✅ 이 레벨로 시작하기</button>
+        <button class="quiz-audio-btn" onclick="startPlacementQuiz()">🔄 다시 진단하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 👂 소리 구별 진단(청지각 변별력): learning-theory-roadmap.md Part 2 §1-1.
+       placementMode와 같은 "인트로 → 문제 → 결과" 3단계 구조·클래스를 재사용하되, 4지선다 대신
+       "같아요/달라요" 2지선다로 두 소리를 비교합니다. -->
+  <div id="phonoTestMode" class="mode-content">
+    <div class="quiz-container">
+      <div id="phonoIntroScreen">
+        <div class="hs-start-desc">비슷하게 들리는 소리 두 개를 차례로 들려줄게요. 두 소리가 같은지 다른지 맞혀보세요! 총 8문제예요.</div>
+        <button class="quiz-audio-btn" onclick="startPhonoTest()">🚀 진단 시작하기</button>
+      </div>
+
+      <div id="phonoQuestionScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>문제: <span id="phonoProgress">0</span>/8</div>
+        </div>
+        <div class="quiz-emoji" id="phonoEmoji">👂</div>
+        <button class="quiz-audio-btn" id="phonoAudioBtn" onclick="playPhonoPair()">
+          🔊 다시 듣기
+        </button>
+        <div class="quiz-options" id="phonoOptions">
+          <button class="quiz-btn" onclick="selectPhonoAnswer(true, this)"><span>같아요</span></button>
+          <button class="quiz-btn" onclick="selectPhonoAnswer(false, this)"><span>달라요</span></button>
+        </div>
+      </div>
+
+      <div id="phonoResultScreen" style="display:none;">
+        <div class="hs-result-title">👂 진단 결과</div>
+        <div class="hs-result-row" id="phonoResultText"></div>
+        <button class="quiz-audio-btn" onclick="startPhonoTest()">🔄 다시 진단하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🧩 작업기억 스팬 진단(Working Memory Span): learning-theory-roadmap.md Part 2 §1-2.
+       도형을 순서대로 보여준 뒤 거꾸로(마지막 본 것부터) 고르게 해서, 실패 직전 스팬 길이를
+       측정합니다. 3개→4개→5개…로 늘려가며 진행. -->
+  <div id="wmsSpanMode" class="mode-content">
+    <div class="quiz-container">
+      <div id="wmsIntroScreen">
+        <div class="hs-start-desc">도형이 순서대로 나타날 거예요. 잘 보고 기억해뒀다가, 다 보여주면 <b>마지막에 본 것부터 거꾸로</b> 눌러주세요. 맞히면 개수가 하나씩 늘어나요!</div>
+        <button class="quiz-audio-btn" onclick="startWmsSpanTest()">🚀 진단 시작하기</button>
+      </div>
+
+      <div id="wmsShowScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>이번 단계: <span id="wmsSpanLabel">3</span>개</div>
+        </div>
+        <div class="quiz-emoji" id="wmsShowEmoji"></div>
+        <div class="hs-start-desc">잘 보고 순서를 기억하세요!</div>
+      </div>
+
+      <div id="wmsAnswerScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>이번 단계: <span id="wmsAnswerSpanLabel">3</span>개</div>
+        </div>
+        <div class="hs-start-desc">거꾸로(마지막에 본 것부터) 순서대로 눌러보세요!</div>
+        <div class="wms-picked-row" id="wmsPickedRow"></div>
+        <div class="wms-options-grid" id="wmsOptions">
+          <!-- JS가 도형 버튼을 생성합니다 -->
+        </div>
+      </div>
+
+      <div id="wmsResultScreen" style="display:none;">
+        <div class="hs-result-title">🧩 진단 결과</div>
+        <div class="hs-result-row" id="wmsResultText"></div>
+        <button class="quiz-audio-btn" onclick="startWmsSpanTest()">🔄 다시 진단하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
+  <!-- 🔗 연상학습 속도 진단(Paired-Associate Learning Rate): learning-theory-roadmap.md Part 2 §1-3.
+       히라가나가 아닌 추상 도형 5개와 무의미 이름을 짝지어 "노출 → 테스트"를 5라운드 반복하고,
+       정확도가 몇 라운드 만에 오르는지로 fast/medium/slow를 판정합니다. -->
+  <div id="palTestMode" class="mode-content">
+    <div class="quiz-container">
+      <div id="palIntroScreen">
+        <div class="hs-start-desc">처음 보는 도형과 이름을 짝지어 보여줄게요. 도형만 보고 이름을 맞혀보세요! 5번 반복해요.</div>
+        <button class="quiz-audio-btn" onclick="startPalTest()">🚀 진단 시작하기</button>
+      </div>
+
+      <div id="palExposureScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>노출 <span id="palRoundLabel">1</span>/5회차</div>
+        </div>
+        <div class="quiz-emoji" id="palExposureSymbol"></div>
+        <div class="hs-start-desc" id="palExposureName" style="font-weight:700;"></div>
+      </div>
+
+      <div id="palTestScreen" style="display:none;">
+        <div class="quiz-score-board">
+          <div>테스트 <span id="palRoundLabelTest">1</span>/5회차 · 문제 <span id="palTestProgress">1</span>/5</div>
+        </div>
+        <div class="quiz-emoji" id="palTestSymbol"></div>
+        <div class="hs-start-desc">이 도형의 이름은 무엇이었을까요?</div>
+        <div class="quiz-options" id="palTestOptions">
+          <!-- JS가 선택지 5개를 생성합니다 -->
+        </div>
+      </div>
+
+      <div id="palResultScreen" style="display:none;">
+        <div class="hs-result-title">🔗 진단 결과</div>
+        <div class="hs-result-row" id="palResultText"></div>
+        <button class="quiz-audio-btn" onclick="startPalTest()">🔄 다시 진단하기</button>
       </div>
     </div>
     <br>

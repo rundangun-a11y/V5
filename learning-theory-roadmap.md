@@ -59,6 +59,15 @@
 | `computeSleepConsolidationNote(ch)` | logic.js, `showLtmDetail()` 바로 위 | 3개 채널 중 오늘 한도를 넘긴 게 있으면 상세보기용 안내 문구 HTML 반환, 없으면 빈 문자열 |
 | `HIRAGANA_FONT_VARIANTS` / `pickCharFontVariant(ch)` | logic.js, `showHiraganaSpeedQuestion()` 바로 위 | 부호화 다양성용 폰트 3종(`Shippori Mincho`/`Yuji Syuku`/`Zen Kurenaido`) 배열과, 호출할 때마다 그중 하나를 무작위로 반환하는 헬퍼 |
 | `speakTTS(text, opts)`의 `opts.jitter` | logic.js ~1898 | true면 재생 속도/음높이를 매번 ±5% 무작위로 흔듦(부호화 다양성용 음성 변주) |
+| `loadLearnerProfile()` / `saveLearnerProfilePatch(patch)` | logic.js, `generateQuiz()` 바로 다음 | Part 2 §1 진단 프로필 저장소. `localStorage` 키: `kotobaLearnerProfile`. 항상 기존 값과 병합 저장(덮어쓰지 않음) |
+| `PLACEMENT_AGE_LEVELS` / `startPlacementQuiz()` 등 | logic.js, `saveLearnerProfilePatch()` 바로 다음 | §1-4 사전지식 배치 퀴즈. 기존 연령대 필터 8단계를 이진탐색처럼 오가며 `priorKnowledgeLevel`(0~100) 산출 → `#placementMode` (index.html) |
+| `PHONO_MINIMAL_PAIRS` | data.js, `MENU_CATEGORIES` 바로 앞 | §1-1 청지각 변별력 진단용 모라 쌍 10개(`{a, b}`) — 청탁음/조음점/요음-직음/마찰음 대비 혼합 |
+| `PHONO_QUESTION_COUNT` / `startPhonoTest()` 등 | logic.js, `applyPlacementResult()` 바로 다음 | §1-1 청지각 변별력 진단(8문항, "같아요/달라요" 2지선다). `pickPhonoSounds()`가 매 문제 같음/다름을 50%로 배정, 결과는 `phonoDiscrimination`(0~1)으로 저장 → `#phonoTestMode` (index.html) |
+| `WMS_SHAPES` / `startWmsSpanTest()` 등 | logic.js, `showPhonoResult()` 바로 다음 | §1-2 작업기억 스팬 진단(도형 역순 기억, 3→9). ⚠️ **주의**: 기존 "단어 메모리" 게임이 이미 `wm` 접두사(`wmScore`/`wmSequence` 등, logic.js 상단)를 쓰고 있어 반드시 `wms` 접두사로 구분해야 함 — 새 진단/기능 추가 시 `wm` 단독 접두사는 피할 것. 결과는 `workingMemorySpan`(정수)으로 저장 → `#wmsSpanMode` (index.html) |
+| `PAL_SYMBOL_SOUND_PAIRS` | data.js, `PHONO_MINIMAL_PAIRS` 바로 다음 | §1-3 연상학습 속도 진단용 도형-이름 5쌍(`{symbol, name}`, 히라가나와 무관한 추상 도형·무의미 카타카나) |
+| `startPalTest()` / `computePalLearningRate()` 등 | logic.js, `showWmsResult()` 바로 다음 | §1-3 연상학습 속도 진단(노출→테스트 5라운드, "정확도 0.8 첫 도달 라운드"로 fast/medium/slow 판정). 결과는 `assocLearningRate`(`'fast'\|'medium'\|'slow'`)로 저장 → `#palTestMode` (index.html) |
+| `GAME_STAGE_INFO` / `GAME_STAGE_MAP` | data.js, `MENU_CATEGORIES` 바로 다음 | §2 게임→단계 매핑. 전자는 A~E 5단계 설명(`{label, desc}`), 후자는 실제 게임 모드 34개 전부를 `'A'\|'B'\|'C'\|'D'` 중 하나로 매핑한 정적 데이터(E단계는 특정 모드에 안 묶여 매핑 대상 아님) |
+| `getGameStage(mode)` / `getModesForStage(stage)` | logic.js, `TOP_MENU_EXTRA_ITEMS` 바로 다음 | `GAME_STAGE_MAP` 조회 헬퍼(§3 오케스트레이터가 쓸 예정, 아직 호출부 없음) |
 
 ### 이미 구현된 이론 (참고용, 재구현 불필요)
 1. 에빙하우스 망각곡선 (`srsForgetProbability`)
@@ -339,10 +348,127 @@
 
 **측정할 것 4가지 + 참고용 1가지**:
 
-1. **청지각 변별력 (Phonological Discrimination)** — 비슷한 소리(예: つ/す, ざ/じゃ 같은 미니멀 페어)를 듣고 같은지 다른지 구별하는 초단문 테스트. 기존 `audioEmoji`류 포맷을 재사용해 5~8문항으로 구성 가능.
-2. **작업기억 스팬 (Working Memory Span)** — 숫자나 도형을 순서대로 보여준 뒤 역순으로 기억해내는 스팬 테스트(3개→4개→5개…로 늘려가며 실패 지점 측정). 신규 미니게임 필요.
-3. **연상학습 속도 (Paired-Associate Learning Rate)** — 완전히 새로운 기호-소리 쌍(히라가나가 아닌 무의미 도형 5~6개 사용, 기존 지식 편향 배제)을 5회 반복 노출-테스트하며 정확도가 몇 번 만에 오르는지 기울기를 측정. "빠른 습득자 / 보통 / 신중한 학습자" 3단계로 분류.
-4. **사전지식 배치 퀴즈 (Adaptive Placement Quiz)** — 기존 `quiz` 모드를 적응형으로 재사용: 맞히면 다음 문제 난이도↑, 틀리면 ↓ (IRT 흉내낸 간이 로직). 최종 수렴 난이도가 곧 시작 레벨.
+1. **청지각 변별력 (Phonological Discrimination)** ✅ 구현 완료 — 비슷한 소리(예: つ/す, ざ/じゃ 같은 미니멀 페어)를 듣고 같은지 다른지 구별하는 초단문 테스트.
+
+> **구현 내역**: 계획대로 `audioEmoji`류 포맷을 그대로 가져다 쓰지는 않고, `placement`(사전지식
+> 배치 퀴즈)와 같은 "인트로 → 문제 → 결과" 3단계 구조·클래스를 재사용하되 4지선다 대신
+> "같아요/달라요" 2지선다로 바꾼 신규 화면으로 구현함.
+> - `data.js`: `MENU_CATEGORIES` 바로 앞에 `PHONO_MINIMAL_PAIRS` 신규 배열 추가 — 청음/탁음 대비
+>   (か/が, た/だ, は/ば), 조음점이 가까운 쌍(し/ひ, ら/な, り/に), 요음-직음 대비
+>   (つ/ちゅ, す/しゅ, ざ/じゃ), 마찰음 대비(つ/す)까지 섞은 모라 쌍 10개(`{a, b}`).
+> - `logic.js`: `applyPlacementResult()` 바로 다음에 청지각 진단 로직 신규 추가.
+>   `PHONO_QUESTION_COUNT`(=8), `PHONO_REPLAY_GAP_MS`(=900, 두 소리 사이 간격) 상수와
+>   `initPhonoTest()`/`startPhonoTest()`/`pickPhonoSounds(pair, isSame)`/
+>   `generatePhonoQuestion()`/`playPhonoPair()`/`selectPhonoAnswer(guessedSame, btn)`/
+>   `showPhonoResult()` 함수 신규 추가. 매 문제 `PHONO_MINIMAL_PAIRS`에서 쌍을 하나 뽑고
+>   50% 확률로 "같은 소리 두 번" 또는 "a·b를 순서 섞어" 재생(`speakTTS` 재사용, 두 소리
+>   사이 900ms 간격). 재생할 소리는 `phonoCurrentSounds` 전역 변수에만 담아 `data.js`의
+>   원본 쌍 객체는 건드리지 않도록 함(공유 데이터 오염 방지). 8문제 종료 후 정확도
+>   (0.0~1.0)를 `saveLearnerProfilePatch({ phonoDiscrimination })`로 저장.
+> - `index.html`: `placementMode` 바로 다음에 `#phonoTestMode`(`#phonoIntroScreen`/
+>   `#phonoQuestionScreen`/`#phonoResultScreen`) 신규 추가 — `placementMode`와 동일한
+>   `.quiz-container`/`.hs-start-desc`/`.quiz-audio-btn`/`.quiz-options`/`.quiz-btn`/
+>   `.hs-result-title` 클래스를 그대로 재사용해 새 CSS 없이 배포. 다만 선택지는 정적
+>   2버튼("같아요"/"달라요")이라 문제마다 다시 그리지 않고, `generatePhonoQuestion()`이
+>   버튼의 `correct`/`wrong` 클래스만 매번 초기화함.
+> - `logic.js`: `switchMode()`에 `phonoTest` 분기 추가(placement 분기와 동일 패턴),
+>   `TOP_MENU_EXTRA_ITEMS`에 "👂 소리 구별 진단" 카드 추가(`launchGame('phonoTest')`).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v16` → `koe-app-v17`로 올림.
+> - **미구현으로 남긴 것**: placement와 마찬가지로 전용 "학습이론" 패널 카드는 추가하지
+>   않음(§1-4와 동일한 판단 — 장기기억 이론이 아니라 Part 2 진단용). 결과 화면에 "어떤
+>   쌍을 특히 헷갈렸는지"까지는 아직 세분화해 보여주지 않음 — 지금은 전체 정확도만 집계.
+>   필요하면 다음 세션에서 쌍별 오답 집계를 추가할 수 있음.
+2. **작업기억 스팬 (Working Memory Span)** ✅ 구현 완료 — 도형을 순서대로 보여준 뒤 역순으로 기억해내는 스팬 테스트(3개→4개→5개…로 늘려가며 실패 지점 측정).
+
+> **구현 내역**: 계획대로 신규 미니게임 UI를 새로 만듦. 숫자 대신 색깔 도형 이모지 9종을
+> 사용(히라가나/일본어 지식과 무관하게 순수 작업기억만 측정하기 위함).
+> - `logic.js`: `showPhonoResult()` 바로 다음에 로직 신규 추가. 상수 `WMS_SHAPES`(도형 9개),
+>   `WMS_START_SPAN`(=3), `WMS_MAX_SPAN`(=9), `WMS_SHOW_INTERVAL_MS`(=900), `WMS_GAP_MS`(=350)와
+>   `initWmsSpanTest()`/`startWmsSpanTest()`/`runWmsRound()`/`playWmsSequence(index)`/
+>   `showWmsAnswerScreen()`/`pickWmsShape(shape, btn)`/`checkWmsAnswer()`/`showWmsResult()`
+>   함수 신규 추가. 3개 스팬부터 시작해 도형을 하나씩(공백 포함) 순서대로 보여준 뒤, 섞인
+>   버튼 중에서 **거꾸로(마지막 본 것부터)** 순서로 고르게 함. 레벨당 1회 시행만 보는 간이
+>   버전(정식 심리검사는 레벨당 2회 평균)이며, 맞히면 스팬 +1, 틀리면 즉시 종료해 "실패
+>   직전 스팬"을 `workingMemorySpan`(정수)으로 저장. 최대 스팬(9)까지 전부 성공하면 9로
+>   고정. **함수/변수명은 전부 `wms` 접두사(예: `wmsSequence`)를 사용** — 기존 "단어 메모리"
+>   게임이 이미 `wm` 접두사(`wmScore`, `wmSequence` 등)를 쓰고 있어 충돌을 피하기 위함
+>   (다음 세션도 `wm` 단독 접두사는 피할 것).
+> - `index.html`: `phonoTestMode` 바로 다음에 `#wmsSpanMode`
+>   (`#wmsIntroScreen`/`#wmsShowScreen`/`#wmsAnswerScreen`/`#wmsResultScreen`) 신규 추가.
+>   선택지 개수가 3~9개로 가변적이라 기존 `.quiz-options`(2열 고정) 대신 `.wms-options-grid`
+>   (3열) CSS를 새로 추가했고, 도형 버튼(`.wms-shape-btn`)과 선택 순서를 보여주는 칩 행
+>   (`.wms-picked-row`/`.wms-picked-chip`)도 신규 추가 — 색상은 전부 디자인 시스템 변수 재사용.
+> - `logic.js`: `switchMode()`에 `wmsSpan` 분기 추가, `TOP_MENU_EXTRA_ITEMS`에
+>   "🧩 기억 스팬 진단" 카드 추가(`launchGame('wmsSpan')`).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v17` → `koe-app-v18`로 올림.
+> - **미구현으로 남긴 것**: placement/phonoTest와 동일하게 전용 "학습이론" 패널 카드는
+>   추가하지 않음. 레벨당 2회 시행 평균을 내는 정식 심리검사 방식은 시간이 오래 걸려
+>   보류(현재는 레벨당 1회 시행). 결과에 따라 §3 오케스트레이터가 실제로 활성 세트 확장
+>   속도를 조정하는 로직은 아직 연결되지 않음 — §3 Phase 1 구현 시 처리할 것.
+3. **연상학습 속도 (Paired-Associate Learning Rate)** ✅ 구현 완료 — 완전히 새로운 기호-소리 쌍(히라가나가 아닌 무의미 도형 5~6개 사용, 기존 지식 편향 배제)을 5회 반복 노출-테스트하며 정확도가 몇 번 만에 오르는지 기울기를 측정. "빠른 습득자 / 보통 / 신중한 학습자" 3단계로 분류.
+
+> **구현 내역**: 계획대로 히라가나가 아닌 추상 도형과 무의미 카타카나 이름을 짝지어
+> "노출 → 테스트"를 5라운드 반복하는 신규 미니게임 UI로 구현함.
+> - `data.js`: `PHONO_MINIMAL_PAIRS` 바로 다음에 `PAL_SYMBOL_SOUND_PAIRS` 신규 배열 추가 —
+>   추상 도형 5개(◆▲●■★)와 실제 뜻이 없는 카타카나 이름(タポ/ケニ/ヌソ/ミヘ/ロズ)을
+>   1:1로 짝지은 `{symbol, name}` 5쌍(기존 어휘력의 영향을 배제하기 위해 히라가나 학습
+>   콘텐츠와 다른 문자·기호를 사용).
+> - `logic.js`: `showWmsResult()` 바로 다음에 로직 신규 추가. 상수 `PAL_ROUNDS`(=5),
+>   `PAL_EXPOSURE_SHOW_MS`(=1100), `PAL_EXPOSURE_GAP_MS`(=300), `PAL_ACCURACY_TARGET`(=0.8)와
+>   `initPalTest()`/`startPalTest()`/`runPalRound()`/`playPalExposureSequence(index)`/
+>   `startPalTestPhase()`/`showPalTestQuestion()`/`selectPalAnswer()`/`finishPalRound()`/
+>   `computePalLearningRate(accuracies)`/`showPalResult()` 함수 신규 추가.
+>   매 라운드 "전체 5쌍을 도형+TTS 이름으로 순서대로 노출 → 순서를 섞어 도형만 보여주고
+>   5지선다로 이름 맞히기(오답 시 정답 하이라이트로 교정 피드백)"를 진행하고, 라운드별
+>   정확도(정답수/5)를 기록. 5라운드 종료 후 정확도가 `PAL_ACCURACY_TARGET`(0.8, 즉 4/5)에
+>   **처음 도달한 라운드**를 기준으로 1~2라운드째면 `fast`, 3~4라운드째면 `medium`, 끝까지
+>   못 미치면 `slow`로 판정해 `saveLearnerProfilePatch({ assocLearningRate })`로 저장.
+>   독립 Node 스크립트로 판정 경계값(1/2/3/4라운드 도달, 미도달 5개 케이스)을 시뮬레이션해 검증함.
+> - `index.html`: `wmsSpanMode` 바로 다음에 `#palTestMode`(`#palIntroScreen`/`#palExposureScreen`/
+>   `#palTestScreen`/`#palResultScreen`) 신규 추가 — `wmsSpanMode`/`quizMode`와 동일한
+>   `.quiz-container`/`.hs-start-desc`/`.quiz-audio-btn`/`.quiz-score-board`/`.quiz-emoji`/
+>   `.quiz-options`/`.quiz-btn`/`.hs-result-title`/`.hs-result-row` 클래스를 전부 재사용해
+>   새 CSS 없이 배포(선택지 5개는 기존 2열 그리드에 2·2·1로 자연스럽게 배치됨).
+> - `logic.js`: `switchMode()`에 `palTest` 분기 추가(`wmsSpan`과 동일 패턴),
+>   `TOP_MENU_EXTRA_ITEMS`에 "🔗 새 짝 암기 속도 진단" 카드 추가(`launchGame('palTest')`).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v18` → `koe-app-v19`로 올림.
+> - **미구현으로 남긴 것**: placement/phonoTest/wmsSpan과 동일하게 전용 "학습이론" 패널
+>   카드는 추가하지 않음(장기기억 이론이 아니라 Part 2 진단용 판단 유지). 결과 판정 로직
+>   (`assocLearningRate`)을 실제로 §3 오케스트레이터(노출 단계 비중 조정 등)에 연결하는
+>   작업은 아직 하지 않음 — §3 Phase 1 구현 시 처리할 것. 이로써 §1 진단 모듈 4가지
+>   (청지각 변별력/작업기억 스팬/연상학습 속도/사전지식 배치 퀴즈)가 모두 구현 완료됨.
+4. **사전지식 배치 퀴즈 (Adaptive Placement Quiz)** ✅ 구현 완료 — 기존 `quiz` 모드를 적응형으로 재사용: 맞히면 다음 문제 난이도↑, 틀리면 ↓ (IRT 흉내낸 간이 로직). 최종 수렴 난이도가 곧 시작 레벨.
+
+> **구현 내역**: 계획대로 신규 문제 데이터를 만들지 않고, 기존 연령대 필터 8단계
+> (`ageLevelSelect`의 6/9/12/18/24/30/36/42개월, `changeAppLevel`)와 `DICTIONARY`의 `level`
+> 필드를 그대로 재사용해 적응형 배치 퀴즈를 구현함.
+> - `logic.js` (`generateQuiz()` 정의 바로 다음): `LEARNER_PROFILE_KEY`(`kotobaLearnerProfile`)로
+>   `localStorage`에 저장/병합하는 `loadLearnerProfile()`/`saveLearnerProfilePatch(patch)` 신규
+>   추가 — §1의 4개 진단 필드를 한 번에 다 채우지 않고 앞으로 세션마다 하나씩 patch로
+>   채워나갈 수 있도록 **항상 병합 저장**(덮어쓰지 않음)하는 방식으로 설계함.
+> - `logic.js`: `PLACEMENT_AGE_LEVELS`(=`[6,9,12,18,24,30,36,42]`, 기존 연령대 버튼과 동일),
+>   `PLACEMENT_QUESTION_COUNT`(=6), `PLACEMENT_START_INDEX`(=3, 18개월) 상수와
+>   `initPlacementQuiz()`/`startPlacementQuiz()`/`generatePlacementQuestion()`/
+>   `selectPlacementAnswer()`/`showPlacementResult()`/`applyPlacementResult()` 함수 신규 추가.
+>   맞히면 단계 인덱스를 `+step`, 틀리면 `-step` 이동시키고, 매 문제마다 `step`을
+>   `Math.ceil(step/2)`로 반씩 줄여 이진탐색처럼 정답 근처로 수렴시킴(2→1→1…).
+>   총 6문제 종료 후 최종 인덱스를 0~100 스케일(`priorKnowledgeLevel`)로 환산해
+>   `saveLearnerProfilePatch()`로 저장.
+> - 출제 단어는 후보 단계와 정확히 일치하는 `DICTIONARY` 항목 중에서 고르되(없으면 그 이하로
+>   폴백), 오답 선택지 4개는 항상 채워야 하므로 연령대 필터와 무관하게 `DICTIONARY` 전체에서 뽑음.
+> - UI는 기존 `quizMode`(발음 듣고 4지선다, `.quiz-container`/`.quiz-emoji`/`.quiz-options`/
+>   `.quiz-btn`/`.hs-result-title` 등 기존 클래스 전부 재사용)와 거의 동일한 새 화면
+>   `#placementMode`(`#placementIntroScreen`/`#placementQuestionScreen`/`#placementResultScreen`)를
+>   `index.html`에 신규 추가 — 새 CSS 없이 배포. 결과 화면의 "✅ 이 레벨로 시작하기" 버튼은
+>   `applyPlacementResult()`가 기존 `changeAppLevel()`을 호출해 진단 결과를 실제로 바로 적용함.
+> - `TOP_MENU_EXTRA_ITEMS`(logic.js) 맨 앞에 "🎯 시작 진단" 항목 추가(`launchGame('placement')`),
+>   `switchMode()`에 `placement` 분기 추가(최근 추가된 `kanjiCards`/`adjective`와 같은 패턴으로
+>   레거시 `tab-btn` 인덱스는 사용하지 않음).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v15` → `koe-app-v16`으로 올림.
+> - **미구현으로 남긴 것**: 진단 자체를 위한 전용 "학습이론" 패널 카드는 추가하지 않음 — 이 기능은
+>   장기기억 이론이 아니라 Part 2 오케스트레이션 소개용이라, 필요하면 별도 "진단/오케스트레이션"
+>   안내 패널을 신설할 때 함께 정리하는 것을 권장. 나머지 진단 3종(청지각 변별력/작업기억
+>   스팬/연상학습 속도)과 참고용 선호 채널 자기보고는 이번 세션에서 다루지 않음.
 5. *(참고용, 배정 근거로는 사용 안 함)* **선호 채널 자기보고** — "듣기/보기/쓰기/말하기 중 뭐가 제일 편해요?" 같은 간단한 설문. ⚠️ **주의**: "시각형/청각형/운동형 학습자" 같은 학습 스타일 매칭 이론은 실제 학습효과 개선을 뒷받침하는 실증 근거가 약하다는 것이 여러 메타분석(Pashler et al., 2008 등)에서 지적된 바 있다. 그래서 이 응답은 **동기부여용 참고 지표로만** 쓰고, 실제 게임 배합 결정은 반드시 1~4번의 **행동 성과 데이터**로 내린다 — "이 아이가 시각형이라고 답했으니 카드게임 위주로"가 아니라 "실제로 카드게임에서 성과가 좋으니 비중을 조금 더"가 원칙.
 
 **데이터 구조 제안** (`logic.js` 신규, `localStorage` 키 `kotobaLearnerProfile`):
@@ -364,7 +490,39 @@
 
 ---
 
-## 2. 게임 유형 → 학습 단계 매핑 (오케스트레이션의 뼈대)
+## 2. 게임 유형 → 학습 단계 매핑 (오케스트레이션의 뼈대) ✅ 데이터 정의 완료 (판정 로직은 미구현)
+
+> **구현 내역**: 계획에 있던 "표 자체를 데이터로 옮기는 작업"만 이번 세션에서 완료함 —
+> 실제 성과 데이터로 "이 항목이 지금 몇 단계인지"를 판정하는 로직(§3의 일부)은 이번
+> 세션 범위가 아니라서 손대지 않음. 우선순위 노트("이 매핑 자체가 오케스트레이터의
+> 전제 조건")대로, 회귀 리스크 없는 정적 데이터 정의부터 먼저 완료하는 쪽을 택함.
+> - `data.js`: `MENU_CATEGORIES` 바로 다음에 `GAME_STAGE_INFO`(A~E 5단계 각각의
+>   `{label, desc}` 설명)와 `GAME_STAGE_MAP`(게임 모드 문자열 → `'A'|'B'|'C'|'D'` 1글자)
+>   신규 추가. `MENU_CATEGORIES`에 실제로 존재하는 게임 모드 34개 전부를 아래 표 그대로
+>   매핑함(독립 Node 스크립트로 `MENU_CATEGORIES`의 전체 모드 목록과 `GAME_STAGE_MAP`의
+>   키 목록을 서로 대조해 34개 전부 빠짐없이 매핑됐고 오타·불일치가 없음을 검증함).
+>   - A(최초 노출): `storybook`/`emojiStorybook`/`ebook`/`karaoke`/`songs`(이야기·노래 감상) +
+>     `pronounce`/`exposure`/`scene`(듣기 전용 학습)
+>   - B(재인 연습): `quiz`/`audioEmoji`/`riddle`/`qa`/`shop`/`lifeqa`/`hiraganaSpeed`/`adjective`
+>     (객관식 퀴즈) + `matching`/`linematch`/`wordMemory`/`eawase`/`silhouette`/`kanjiCards`
+>     (카드 매칭·기억력)
+>   - C(회상 연습): `spelling`/`onomatopoeia`(소리·철자 맞추기) +
+>     `writing`/`hiraganaWrite`/`trace`/`worksheet`/`dakuonTest`(손글씨 쓰기 연습)
+>   - D(발화·전이): `speech`/`hiraganaRead`(말하기·음성 인식) + `sentence`/`compound`
+>     (문장·단어 조합) + `wordsearch`(탐색 퍼즐)
+>   - E(유지·재맥락화)는 `GAME_STAGE_MAP`에 없음 — 특정 게임 모드에 고정되지 않고 기존
+>     복습 세트(`startReviewSession`)나 A단계 콘텐츠(이야기·노래) 재감상으로 이뤄지기
+>     때문에, 이 표에서는 `GAME_STAGE_INFO.E.desc`에 설명만 남겨두고 매핑 대상에서 제외함.
+> - `logic.js`: `TOP_MENU_EXTRA_ITEMS` 배열 바로 다음(`hideAllMenuPanels()` 바로 위)에
+>   `getGameStage(mode)`(모드 → 단계 문자 조회, 매핑 없으면 `null`)와
+>   `getModesForStage(stage)`(단계 → 해당 모드 배열 조회) 헬퍼 함수 신규 추가 — 아직 이
+>   함수들을 실제로 호출하는 곳은 없음(§3 오케스트레이터가 만들어질 때 사용할 유틸리티로
+>   미리 준비만 해둔 상태).
+> - `sw.js`: `CACHE_NAME`을 `koe-app-v19` → `koe-app-v20`으로 올림.
+> - **미구현으로 남긴 것**: "항목별 단계 이동 규칙"(각 게임 카테고리별 정답/오답을 채널로
+>   기록해 다음 단계 진입 기준을 판단하는 실제 로직)은 이번 세션에서 구현하지 않음 —
+>   이건 §2 자체보다는 §3 오케스트레이터의 "판정 기준" 부분과 사실상 같은 작업이라,
+>   §3 Phase 1을 시작할 때 `getGameStage`/`getModesForStage`와 함께 이어서 설계하는 것을 권장.
 
 **개념**: 이미 구현된 "재인(카드찾기)·회상(쓰기)·발화(읽기) 3중 검증" 모델(로드맵 이론 3번)을 히라가나 밖의 30개 게임 전체로 확장한다. 모든 항목(단어/글자/문형)은 아래 5단계 파이프라인을 순서대로 통과한다.
 
@@ -378,8 +536,8 @@
 
 **항목별 단계 이동 규칙**: 각 항목은 A→B→C→D→E를 순서대로 밟되, 이미 구현된 히라가나 3채널 통계(`hsStats`/`hwStats`/`hrStats`, `computeLtmStatus`)와 같은 방식으로 카테고리별 정답/오답을 채널로 기록해 다음 단계 진입 기준을 판단한다. 즉 **완전히 새 시스템이 아니라 기존 SRS/통계 엔진을 게임 카테고리 축으로 한 번 더 일반화**하는 것.
 
-**우선순위**: 높음 (이 매핑 자체가 오케스트레이터의 전제 조건)
-**난이도**: 중 (표 자체는 데이터 정의고, 실제 "판정 기준"을 코드로 짜는 게 난이도의 대부분)
+**우선순위**: 높음 (이 매핑 자체가 오케스트레이터의 전제 조건) — 데이터 정의는 완료, 판정 로직은 §3와 함께 진행
+**난이도**: 중 (표 자체는 데이터 정의고 완료됨 — 실제 "판정 기준"을 코드로 짜는 게 난이도의 대부분이며 이 부분이 아직 남음)
 
 ---
 
@@ -451,10 +609,13 @@
 ---
 
 ## Part 2 다음 세션 시작 가이드
-1. §1 진단 모듈부터 구현 — 특히 4번(적응형 배치 퀴즈)은 기존 `quiz` 모드를 거의 그대로 재사용 가능해 리스크가 가장 낮음
-2. §2의 게임→단계 매핑 표를 `data.js`에 `GAME_STAGE_MAP` 같은 실제 데이터 구조로 옮기는 작업을 먼저 하면 §3 작업이 쉬워짐
-3. §3은 반드시 Phase 1(규칙 기반)만 먼저 — Phase 2/3는 Phase 1이 실제로 몇 주 굴러가며 데이터가 쌓인 뒤 재검토
-4. §4-1 미니 롤플레이는 오케스트레이터와 독립적으로 먼저 프로토타입을 만들어봐도 무방 — 시나리오 1~2개로 작게 시작해서 대사 풀 다양화 패턴부터 검증할 것
+1. ~~§1 진단 모듈 중 4번(적응형 배치 퀴즈)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `priorKnowledgeLevel`까지 채워짐
+2. ~~§1 진단 모듈 중 1번(청지각 변별력)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `phonoDiscrimination`까지 채워짐
+3. ~~§1 진단 모듈 중 2번(작업기억 스팬)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `workingMemorySpan`까지 채워짐
+4. ~~§1 진단 모듈 중 3번(연상학습 속도)~~ ✅ 구현 완료 — `kotobaLearnerProfile`에 `assocLearningRate`까지 채워짐. **이로써 §1 진단 모듈 4가지가 모두 구현 완료됨.**
+5. ~~§2의 게임→단계 매핑 표를 `data.js`에 `GAME_STAGE_MAP`으로 옮기는 작업~~ ✅ 완료(`GAME_STAGE_MAP`/`GAME_STAGE_INFO` + 조회 헬퍼 `getGameStage`/`getModesForStage`). **다음은 §3 오케스트레이터 Phase 1(규칙 기반)을 시작할 차례** — 그 첫 작업은 §2에서 미룬 "항목별 단계 이동 규칙"(카테고리별 정답/오답 채널 기록 → 다음 단계 진입 판정)을 `pickNextGameForSession()`과 함께 설계하는 것부터.
+6. §3은 반드시 Phase 1(규칙 기반)만 먼저 — Phase 2/3는 Phase 1이 실제로 몇 주 굴러가며 데이터가 쌓인 뒤 재검토. §3 Phase 1을 시작할 때 지금까지 쌓인 4개 진단 필드(`phonoDiscrimination`/`workingMemorySpan`/`assocLearningRate`/`priorKnowledgeLevel`)를 실제로 `pickNextGameForSession()` 같은 함수에 입력값으로 연결하는 것이 핵심 작업
+7. §4-1 미니 롤플레이는 오케스트레이터와 독립적으로 먼저 프로토타입을 만들어봐도 무방 — 시나리오 1~2개로 작게 시작해서 대사 풀 다양화 패턴부터 검증할 것
 
 ---
 
