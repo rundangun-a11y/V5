@@ -379,12 +379,21 @@ let currentAppLevel = 36;
 let currentJlptFilter = 'all';
 let currentCategoryFilter = 'all';
 function getActiveWords(){
-  return DICTIONARY.filter(w => {
+  const base = DICTIONARY.filter(w => {
     if (w.level > currentAppLevel) return false;
     if (currentJlptFilter !== 'all' && w.jlpt !== currentJlptFilter) return false;
     if (currentCategoryFilter !== 'all' && w.category !== currentCategoryFilter) return false;
     return true;
   });
+  // 📚 어휘 전용 복습 세트(startVocabReviewSession) 진행 중이면, 퀴즈·문장 게임이 공통으로
+  // 참조하는 이 함수 하나만 "복습이 급한 단어" 목록으로 제한해서 모든 단어 게임이 자동으로
+  // 같은 좁힌 범위를 쓰게 만듦(게임별로 따로 필터를 추가할 필요 없음). 제한 결과가 0개면
+  // (예: 필터를 바꿔서 후보 단어가 현재 범위 밖으로 나간 경우) 평소 범위로 안전하게 되돌아감
+  if (wordReviewSessionActive) {
+    const restricted = base.filter(w => wordReviewSessionWords.some(rw => rw.jp === w.jp));
+    return restricted.length > 0 ? restricted : base;
+  }
+  return base;
 }
 
 /* 😊 무조건적 긍정 피드백 — 저연령(12/18개월) 레벨에서는 오답을 부드럽게 표현합니다 */
@@ -450,7 +459,7 @@ function refreshActiveModeAfterFilterChange(){
     lastMatchedJp = null;
     renderStream("", null);
   } else if(activeModeId === 'spellingMode'){
-    generateSpellingQuestion();
+    if(document.getElementById('spellingQuestionScreen').style.display !== 'none') generateSpellingQuestion();
   }
 }
 
@@ -507,6 +516,13 @@ const logList = document.getElementById('logList');
 const galleryEl = document.getElementById('gallery');
 let wordStats = {}; // 📊 단어별 정답/오답 통계 { [jp]: { correct, wrong, channels:{B,C,D} } } - 모든 게임 모드 공통 누적, localStorage에 영속 저장됨
 const WORD_STATS_KEY = 'kotobaWordGameStats';
+
+/* 🔀 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2에서
+   "실질적으로 여러 모드 중에서 골라야 하는 상황은 어휘 축 §3 오케스트레이터가 구현될 때
+   처음 발생한다"고 미뤄뒀던 부분의 실제 구현. 어휘 축(단어 게임)에서 직전에 어떤
+   모달리티(present/response)로 문제를 풀었는지 기록해두고, 다음 추천 때 다른 모달리티를
+   우선 고르는 데 사용함. */
+const LAST_VOCAB_MODALITY_KEY = 'kotobaLastVocabModality';
 
 /* 🪜 §2 단계 판정 일반화 — learning-theory-roadmap.md Part 2 §6(a).
    지금 어떤 게임 모드가 실행 중인지 기록해두는 전역 변수. switchMode()에서 매번 갱신되며,
@@ -622,38 +638,74 @@ function srsForgetProbability(stat, now) {
   return 1 - retention;
 }
 
-/* 🔀 분산 학습 · 간섭 방지 — learning-theory-roadmap.md Part 4 §1.
-   두 글자가 HIRAGANA_CONFUSION_GROUPS(data.js)의 같은 묶음에 속하는지 확인합니다.
-   자형이 비슷한 글자끼리는 같은 문제의 선택지로 동시에 나오거나 바로 이어 나오면
-   서로 헷갈려 기억이 뒤섞이는 간섭이 일어나기 쉬우므로, 이를 판별하는 데 씁니다. */
-function isSameConfusionGroup(chA, chB) {
-  if (chA === chB) return false;
-  return HIRAGANA_CONFUSION_GROUPS.some(group => group.includes(chA) && group.includes(chB));
+/* 🔀 분산 학습 · 간섭 방지 — learning-theory-roadmap.md Part 4 §1 / §17(어휘 축 확장).
+   두 key가 groups(같은 묶음 배열들의 배열)의 같은 묶음에 속하는지 판별하는 범용 헬퍼.
+   히라가나(자형 유사)와 어휘(발음/의미 유사) 양쪽에서 공용으로 쓴다. */
+function isSameConfusionGroupGeneric(keyA, keyB, groups) {
+  if (keyA === keyB) return false;
+  return groups.some(group => group.includes(keyA) && group.includes(keyB));
 }
 
-/* 이미 뽑힌 문제 순서(list, {ch, ...} 배열)를 받아, 같은 혼동군 글자가 최근 minGap개
-   이내에 다시 등장하지 않도록 순서만 재배치합니다(어떤 글자가 뽑혔는지 자체는 그대로
-   유지 — SRS 가중치로 이미 결정된 "누가 뽑히는지"는 건드리지 않고 "어떤 순서로 나오는지"만
-   조정하는 최소 침습적 방식). 뒤쪽에서 자리를 바꿀 만한 후보를 찾지 못하면 그 자리는
-   충돌을 감수하고 그대로 둡니다(완전히 막을 수 없는 경우도 있음 — 예: 활성 세트가
-   혼동군 글자로만 구성된 경우). */
-function spaceOutConfusionGroups(list) {
+/* 이미 뽑힌 문제 순서(list, 각 항목에서 getKey(item)로 key를 추출)를 받아, 같은 혼동군
+   key가 최근 minGap개 이내에 다시 등장하지 않도록 순서만 재배치하는 범용 헬퍼(어떤
+   항목이 뽑혔는지 자체는 그대로 유지 — SRS 가중치로 이미 결정된 "누가 뽑히는지"는
+   건드리지 않고 "어떤 순서로 나오는지"만 조정하는 최소 침습적 방식). 뒤쪽에서 자리를
+   바꿀 만한 후보를 찾지 못하면 그 자리는 충돌을 감수하고 그대로 둔다(완전히 막을 수
+   없는 경우도 있음 — 예: 후보 전체가 혼동군 하나로만 구성된 경우). */
+function spaceOutConfusionGroupsGeneric(list, groups, getKey) {
   if (!list || list.length <= 2) return list;
   const arr = list.slice();
   const minGap = 2;
+  const sameGroup = (a, b) => isSameConfusionGroupGeneric(getKey(a), getKey(b), groups);
   for (let i = 1; i < arr.length; i++) {
     const recentWindow = arr.slice(Math.max(0, i - minGap), i);
-    const hasConflict = recentWindow.some(prev => isSameConfusionGroup(prev.ch, arr[i].ch));
+    const hasConflict = recentWindow.some(prev => sameGroup(prev, arr[i]));
     if (!hasConflict) continue;
     for (let j = i + 1; j < arr.length; j++) {
-      const candidateConflict = recentWindow.some(prev => isSameConfusionGroup(prev.ch, arr[j].ch));
-      if (!candidateConflict && !isSameConfusionGroup(arr[j].ch, arr[i - 1] ? arr[i - 1].ch : null)) {
+      const candidateConflict = recentWindow.some(prev => sameGroup(prev, arr[j]));
+      if (!candidateConflict && (!arr[i - 1] || !sameGroup(arr[j], arr[i - 1]))) {
         [arr[i], arr[j]] = [arr[j], arr[i]];
         break;
       }
     }
   }
   return arr;
+}
+
+/* 두 글자가 HIRAGANA_CONFUSION_GROUPS(data.js)의 같은 묶음에 속하는지 확인합니다.
+   자형이 비슷한 글자끼리는 같은 문제의 선택지로 동시에 나오거나 바로 이어 나오면
+   서로 헷갈려 기억이 뒤섞이는 간섭이 일어나기 쉬우므로, 이를 판별하는 데 씁니다. */
+function isSameConfusionGroup(chA, chB) {
+  return isSameConfusionGroupGeneric(chA, chB, HIRAGANA_CONFUSION_GROUPS);
+}
+
+function spaceOutConfusionGroups(list) {
+  return spaceOutConfusionGroupsGeneric(list, HIRAGANA_CONFUSION_GROUPS, item => item.ch);
+}
+
+/* 어휘 축 버전 — VOCAB_CONFUSION_GROUPS(data.js) 기준, item.jp를 key로 사용.
+   wordSrsWeightedPick()/pairSrsWeightedPick() 등 단어 뽑기 결과 직후에 적용해
+   발음·의미가 비슷한 단어끼리 연달아 나오지 않도록 순서만 재배치한다. */
+function isSameVocabConfusionGroup(jpA, jpB) {
+  return isSameConfusionGroupGeneric(jpA, jpB, VOCAB_CONFUSION_GROUPS);
+}
+
+function spaceOutVocabConfusionGroups(list) {
+  return spaceOutConfusionGroupsGeneric(list, VOCAB_CONFUSION_GROUPS, item => item.jp);
+}
+
+/* 어휘 축 혼동 단어 인터리빙 — learning-theory-roadmap.md §17.
+   직전 단어(prevJp)와 같은 혼동군(VOCAB_CONFUSION_GROUPS)에 속한 단어를 후보 목록에서
+   제외한 뒤 돌려준다. 여러 단어 게임이 "매 라운드 하나씩" 단어를 뽑는 구조라, 배치로
+   미리 뽑아 순서를 재배치하는 spaceOutVocabConfusionGroups 대신 "다음 후보를 뽑기 전에
+   직전 단어와 혼동군인 것만 미리 걸러내는" 방식을 쓴다(히라가나 카드찾기의
+   nonConfusingPool과 같은 접근). 제외하고 나면 후보가 하나도 안 남는 경우(활성 세트가
+   혼동군 단어로만 구성된 경우 등)에는 원래 목록을 그대로 돌려준다 — 완전히 못 피하면
+   그냥 두는 것은 히라가나 축과 동일한 원칙. */
+function excludeVocabConfusionGroup(pool, prevJp) {
+  if (!prevJp || !pool || pool.length === 0) return pool;
+  const filtered = pool.filter(w => !isSameVocabConfusionGroup(w.jp, prevJp));
+  return filtered.length > 0 ? filtered : pool;
 }
 
 /* 🧠 SRS 가중 무작위 뽑기 (히라가나 카드찾기/쓰기 공용).
@@ -839,6 +891,18 @@ function renderVocabStageOverview() {
     chip.innerHTML = `<span>${stageEmoji[stage]}</span><span>${info.label}</span><b>${dist[stage]}</b>`;
     row.appendChild(chip);
   });
+
+  // 📚 어휘 전용 복습 세트 — 히라가나 복습 세트의 ltmReviewDesc와 동일한 패턴으로,
+  // 지금 복습할 단어가 몇 개나 있는지 미리 안내함
+  const vocabReviewDescEl = document.getElementById('ltmVocabReviewDesc');
+  if (vocabReviewDescEl) {
+    const candidateCount = getVocabReviewCandidateWords().length;
+    if (candidateCount > 0) {
+      vocabReviewDescEl.textContent = `복습하면 좋은 단어 ${candidateCount}개 · 단어 퀴즈·문장 맞히기·철자 맞추기를 랜덤으로 섞어 복습해요`;
+    } else {
+      vocabReviewDescEl.textContent = '지금은 복습할 단어가 없어요 🎉';
+    }
+  }
 }
 
 /* 🌳 오답 나무 키우기 — learning-theory-roadmap.md Part 3 §4.
@@ -1407,6 +1471,94 @@ function saveStreakState() {
   } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
 }
 
+/* 🏅 스트릭 배지·테마 해금 상태 — earnedDays: 지금까지 도달한 STREAK_BADGES의 days 값 목록
+   (한 번 얻으면 스트릭이 끊겨도 제거하지 않음). activeTheme: 지금 적용 중인 테마 이름(null이면
+   기본 배색). 배지 판정과는 별개 저장소를 씀(진단 프로필/스트릭 일수와 성격이 다른 데이터) */
+const STREAK_BADGE_KEY = 'kotobaStreakBadges';
+let streakBadgeState = { earnedDays: [], activeTheme: null };
+
+function loadStreakBadgeState() {
+  try {
+    const raw = localStorage.getItem(STREAK_BADGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    streakBadgeState = (parsed && typeof parsed === 'object')
+      ? {
+          earnedDays: Array.isArray(parsed.earnedDays) ? parsed.earnedDays : [],
+          activeTheme: (typeof parsed.activeTheme === 'string') ? parsed.activeTheme : null
+        }
+      : { earnedDays: [], activeTheme: null };
+  } catch (e) {
+    streakBadgeState = { earnedDays: [], activeTheme: null };
+  }
+  return streakBadgeState;
+}
+
+function saveStreakBadgeState() {
+  try {
+    localStorage.setItem(STREAK_BADGE_KEY, JSON.stringify(streakBadgeState));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 방금 currentStreak이 갱신된 직후 호출 — 새로 도달한(=earnedDays에 아직 없는) 배지가 있으면
+   기록하고 짧은 축하 팝업을 띄웁니다. 여러 배지를 한 번에 넘겼어도(예: 오프라인 뒤 복귀) 순서대로
+   전부 기록하되, 팝업은 가장 마지막(가장 높은 days) 배지 하나만 보여줘 화면이 어지럽지 않게 함 */
+function checkStreakBadges(currentStreak) {
+  loadStreakBadgeState();
+  const newlyEarned = STREAK_BADGES.filter(b =>
+    b.days <= currentStreak && !streakBadgeState.earnedDays.includes(b.days)
+  );
+  if (newlyEarned.length === 0) return;
+  newlyEarned.forEach(b => streakBadgeState.earnedDays.push(b.days));
+  saveStreakBadgeState();
+  showNewBadgePopup(newlyEarned[newlyEarned.length - 1]);
+}
+
+/* 새 배지를 얻었을 때 화면 위쪽에 잠깐 떠올랐다 사라지는 알림. 실패해도(DOM 문제 등)
+   게임 진행에는 전혀 지장 없도록 조용히 무시함 */
+function showNewBadgePopup(badge) {
+  try {
+    const popup = document.createElement('div');
+    popup.className = 'streak-badge-popup';
+    popup.innerHTML = `
+      <span class="streak-badge-popup-emoji">${badge.emoji}</span>
+      <span class="streak-badge-popup-text">${badge.days}일 연속 달성! "${badge.label}" 배지 획득</span>
+    `;
+    document.body.appendChild(popup);
+    setTimeout(() => popup.classList.add('streak-badge-popup-show'), 20);
+    setTimeout(() => {
+      popup.classList.remove('streak-badge-popup-show');
+      setTimeout(() => popup.remove(), 400);
+    }, 3200);
+  } catch (e) { /* 팝업 연출 실패해도 배지 기록 자체는 이미 저장됐으므로 조용히 무시 */ }
+}
+
+/* 지금 적용 중인 테마를 body 클래스에 반영 — 배지로 얻은 테마가 없거나 activeTheme이 null이면
+   기본 배색(:root)만 그대로 씀. 페이지 로드 시(initAppLevelUI)와 테마 선택 직후 모두 호출됨 */
+function applyActiveStreakTheme() {
+  loadStreakBadgeState();
+  STREAK_BADGES.forEach(b => {
+    if (b.theme) document.body.classList.remove('theme-' + b.theme);
+  });
+  if (streakBadgeState.activeTheme) {
+    document.body.classList.add('theme-' + streakBadgeState.activeTheme);
+  }
+}
+
+/* 배지 갤러리에서 테마를 고를 때 호출 — 아직 해금 못 한 테마는 선택할 수 없고(방어적으로
+   여기서도 한 번 더 확인), themeName이 null이면 기본 배색으로 되돌립니다 */
+function selectStreakTheme(themeName) {
+  loadStreakBadgeState();
+  if (themeName !== null) {
+    const badge = STREAK_BADGES.find(b => b.theme === themeName);
+    const unlocked = badge && streakBadgeState.earnedDays.includes(badge.days);
+    if (!unlocked) return;
+  }
+  streakBadgeState.activeTheme = themeName;
+  saveStreakBadgeState();
+  applyActiveStreakTheme();
+  renderStreakBoard();
+}
+
 /* 오늘 학습 활동(정답/오답 기록)이 하나라도 생겼을 때 호출됩니다(logTodayLearned()에서 재사용).
    오늘 이미 반영했으면 아무것도 하지 않고, 어제까지 연속이었으면 스트릭을 이어가고(+1),
    하루 이상 비어 끊겼으면(또는 처음이면) 1부터 다시 시작합니다 */
@@ -1420,6 +1572,7 @@ function recordStreakActivity() {
   streakState.lastVisitCalendarDay = today;
   streakState.longestStreak = Math.max(streakState.longestStreak, streakState.currentStreak);
   saveStreakState();
+  checkStreakBadges(streakState.currentStreak); // 🏅 새로 도달한 배지가 있으면 기록 + 팝업
   renderStreakBoard(true); // 방금 새로 찍힌 오늘 도장에만 팝 애니메이션 적용
 }
 
@@ -1468,6 +1621,28 @@ function renderStreakBoard(animateFreshStamp) {
     ? `<span class="streak-board-best">최고 ${streakState.longestStreak}일</span>`
     : '';
 
+  // 🏅 배지 갤러리 — 해금한 배지는 선명하게, 아직 못 딴 배지는 흐리게(잠금 표시) 보여줌.
+  // 테마가 있는 배지 중 해금된 것과 "기본" 항목은 클릭해서 바로 테마를 바꿀 수 있음.
+  loadStreakBadgeState();
+  const defaultActive = !streakBadgeState.activeTheme;
+  let badgesHtml = `
+    <button type="button" class="streak-badge streak-badge-earned${defaultActive ? ' streak-badge-active' : ''}"
+      onclick="selectStreakTheme(null)" title="기본 배색">
+      <span class="streak-badge-emoji">🎨</span><span class="streak-badge-label">기본</span>
+    </button>`;
+  STREAK_BADGES.forEach(b => {
+    const earned = streakBadgeState.earnedDays.includes(b.days);
+    const isActive = earned && streakBadgeState.activeTheme === b.theme && b.theme;
+    const clickable = earned && b.theme;
+    badgesHtml += `
+      <button type="button" class="streak-badge${earned ? ' streak-badge-earned' : ' streak-badge-locked'}${isActive ? ' streak-badge-active' : ''}"
+        ${clickable ? `onclick="selectStreakTheme('${b.theme}')"` : 'disabled'}
+        title="${earned ? `${b.days}일 연속 달성 배지` : `${b.days}일 연속 달성 시 해금`}">
+        <span class="streak-badge-emoji">${earned ? b.emoji : '🔒'}</span>
+        <span class="streak-badge-label">${b.label}</span>
+      </button>`;
+  });
+
   board.style.display = 'block';
   board.innerHTML = `
     <div class="streak-board-head">
@@ -1475,6 +1650,7 @@ function renderStreakBoard(animateFreshStamp) {
       ${bestBadge}
     </div>
     <div class="streak-days">${daysHtml}</div>
+    <div class="streak-badges">${badgesHtml}</div>
   `;
 }
 
@@ -1651,6 +1827,62 @@ function toggleSelfReferenceEmoji(ch, emoji) {
   saveSelfReferenceNotes(notes);
   const box = document.getElementById('ltmSelfRefBox-' + ch);
   if (box) box.outerHTML = renderSelfReferenceHtml(ch);
+}
+
+/* 💭 정교화·자기참조 효과 — 단어 축 확장 (learning-theory-roadmap.md "다음 세션 추천" ①).
+   위 renderSelfReferenceHtml()/toggleSelfReferenceEmoji()는 애초에 "key" 하나만 받는 범용
+   함수였음 — ch(히라가나 한 글자)든 jp(단어 전체 문자열)든 그냥 localStorage 객체
+   (kotobaSelfReferenceNotes)의 서로 다른 key로 저장될 뿐이라 두 축이 같은 저장소를 써도
+   충돌하지 않음. 그래서 이 확장은 새 저장/렌더 로직 없이, 그 위젯을 담을 "단어 상세보기"
+   화면만 새로 만들어 단어 카드(갤러리)에서 열 수 있게 연결하는 것으로 충분함. */
+function findDictionaryWord(jp) {
+  return DICTIONARY.find(w => w.jp === jp) || null;
+}
+
+/* 단어 하나의 채널별(B 재인/C 회상/D 발화) 정답·오답과 A~E 단계, 그리고 자기참조 위젯을
+   보여주는 상세보기. showLtmDetail()과 같은 `.ltm-detail-box` 마크업/CSS를 그대로 재사용해
+   히라가나 상세보기와 톤을 통일함 */
+function showWordDetail(jp) {
+  const box = document.getElementById('wordDetailBox');
+  if (!box) return;
+  const word = findDictionaryWord(jp);
+  if (!word) return;
+
+  const stat = wordStats[jp];
+  const channels = (stat && stat.channels) || {};
+  const channelLabels = { B: '재인', C: '회상', D: '발화·전이' };
+  const rowsHtml = ['B', 'C', 'D'].map(key => {
+    const c = channels[key];
+    if (!c || (c.correct + c.wrong) === 0) {
+      return `<div class="ltm-detail-row"><b>${channelLabels[key]}</b><span>아직 안 풀어봤어요</span></div>`;
+    }
+    const pct = Math.round((c.correct / (c.correct + c.wrong)) * 100);
+    return `<div class="ltm-detail-row"><b>${channelLabels[key]}</b><span>정답 ${c.correct} · 오답 ${c.wrong} · 정확도 약 ${pct}%</span></div>`;
+  }).join('');
+
+  const stage = computeWordGameStage(jp);
+  const stageEmoji = { A: '👂', B: '🔍', C: '✍️', D: '🗣️', E: '🌱' };
+  const stageLabel = `${stageEmoji[stage]} ${GAME_STAGE_INFO[stage].label}`;
+
+  // 💭 정교화·자기참조 효과 — ch 대신 jp를 key로 그대로 재사용
+  const selfRefHtml = renderSelfReferenceHtml(jp);
+
+  box.innerHTML = `
+    <div class="ltm-detail-header">
+      <span class="ltm-detail-ch" style="font-size:20px;">${word.emoji} ${word.jp}</span>
+      <span class="ltm-detail-label">${word.kr} · ${stageLabel}</span>
+      <button class="ltm-detail-close" onclick="closeWordDetail()">✕</button>
+    </div>
+    ${rowsHtml}
+    ${selfRefHtml}
+  `;
+  box.style.display = 'block';
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeWordDetail() {
+  const box = document.getElementById('wordDetailBox');
+  if (box) box.style.display = 'none';
 }
 
 /* 🎙️ 프로덕션 효과(Production Effect) — 소리 도감 · 내 목소리 녹음 비교
@@ -1938,6 +2170,42 @@ let hrAnyTimeoutThisQuestion = false; // 이번 문제에서 시도 중 시간�
 const HR_STATS_KEY = 'kotobaHrCharStats';
 const HR_WEIGHT_KEY = 'kotobaHrWeightLevel';
 
+/* 🦜 섀도잉 미니게임 전역 상태 (Part 3 §2) — 원어민 음성을 듣는 즉시 거의 동시에
+   따라 말하는 섀도잉은 단순 듣기보다 부호화 깊이가 크고, 리듬·억양까지 체화시켜
+   발화(production) 인출 경로를 강화함. 히라가나 읽기(hr)와 달리 "글자를 보고 읽기"가
+   아니라 "듣고 곧바로 따라 말하기"라, 문제 화면엔 정답 글자를 보여주지 않고 이모지만 보여줌.
+   - 소리 재생이 끝나자마자(자동으로) 마이크가 켜져 실제 재생 시간 × 1.2를 인식 제한으로 씀
+   - 1차 구현은 "정답 여부"만 판정(단어 포함 여부) — 타이밍/억양 정밀 비교는 범위 밖
+   - 시도는 문제당 1번만(섀도잉 특성상 "그 순간 곧바로" 따라 하는 것 자체가 핵심이라
+     hr처럼 재도전을 주면 취지가 흐려짐) — 총 10문제 */
+let shadowQuestions = [];
+let shadowIndex = 0;
+let shadowCorrectScore = 0;
+let shadowWrongScore = 0;
+let shadowAnswered = false;
+let shadowListening = false;
+let shadowRecognition = null;
+let shadowAttemptTimer = null;
+let shadowAdvanceTimer = null;
+let currentShadowWord = null;
+const SHADOW_MIN_TIME_MS = 1200;  // 아무리 짧은 단어라도 최소 이만큼은 들어줌
+const SHADOW_MAX_TIME_MS = 4500;  // 아무리 긴 단어라도 이보다 오래 기다리진 않음
+const SHADOW_WINDOW_RATIO = 1.2;  // 실제 재생 시간의 1.2배를 인식 제한 시간으로 사용
+
+/* 🎙️ 섀도잉 발화 타이밍·억양 정밀 비교 — learning-theory-roadmap.md §14(프로덕션 효과 확장).
+   1차 구현(정답 여부만 판정)에 "덤" 정보로 리듬·억양 피드백을 추가한다. 판정 로직(isCorrect)
+   자체에는 전혀 영향을 주지 않고, 맞았을 때든 틀렸을 때든 피드백 문구 끝에 살짝 덧붙이기만
+   한다. API 미지원/권한 거부 시에는 조용히 건너뛰고 기존 판정만 정상 동작한다. */
+let shadowAttemptStartedAt = null;   // 이번 시도의 마이크 인식 시작 시각(리듬 비교용)
+let shadowPitchSamples = [];         // 이번 시도 중 추출한 대략적인 피치(Hz) 샘플들
+let shadowPitchAnalyser = null;
+let shadowPitchAudioCtx = null;
+let shadowPitchStream = null;
+let shadowPitchIntervalTimer = null;
+const SHADOW_RHYTHM_RATIO_MIN = 0.7;   // (사용자 발화 시간 / TTS 재생 시간) 비율이 이 범위 안이면
+const SHADOW_RHYTHM_RATIO_MAX = 1.5;   // "리듬이 비슷하다"고 판단
+const SHADOW_INTONATION_RANGE_HZ = 40; // 피치 샘플 최댓값-최솟값이 이 이상이면 "억양이 있다"고 판단
+const SHADOW_PITCH_SAMPLE_INTERVAL_MS = 150;
 
 /* 🧠 단어 메모리 게임 전역 상태 */
 let wmCount = 2;
@@ -2229,6 +2497,7 @@ function playFlipSound() {
 }
 
 function buildGallery(){
+  closeWordDetail(); // 카드 목록이 다시 그려지면(필터 변경 등) 이전에 열려있던 상세보기는 닫아둠
   galleryEl.innerHTML = "";
   const sorted = getActiveWords().slice().sort((a,b)=> a.jp.localeCompare(b.jp,'ja'));
   sorted.forEach(w=>{
@@ -2238,6 +2507,7 @@ function buildGallery(){
     const rateCls = getWrongRateClass(w.jp);
     if (rateCls) c.classList.add(rateCls);
     c.innerHTML = `
+      <button class="gcard-detail-btn" title="상세보기">🔍</button>
       <div class="emo">${w.emoji}${categoryBadgeHTML(w)}</div>
       <div class="jp">${w.jp}</div>
       <div class="kr">${w.kr}</div>
@@ -2246,6 +2516,12 @@ function buildGallery(){
       e.stopPropagation();
       c.classList.toggle('show-kr');
       speakWithHighlight(w.jp, c.querySelector('.jp'), { rate: 0.85 });
+    });
+    // 💭 자기참조 효과(단어 축) — 정보 버튼은 카드 전체 클릭(뒤집기+발음)과 분리된 별도
+    // 동작이라 stopPropagation으로 카드 클릭 핸들러가 같이 실행되지 않게 막음
+    c.querySelector('.gcard-detail-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      showWordDetail(w.jp);
     });
     galleryEl.appendChild(c);
   });
@@ -2424,7 +2700,7 @@ function switchMode(mode) {
     stopPronounceListening();
     stopHrListening();
     getAudioContext();
-    generateSpellingQuestion();
+    startSpellingRound();
   } else if (mode === 'wordsearch') {
     document.querySelectorAll('.tab-btn')[22].classList.add('active');
     document.getElementById('wordsearchMode').classList.add('active');
@@ -2497,6 +2773,14 @@ function switchMode(mode) {
     stopHrListening();
     getAudioContext();
     initHiraganaReadGame();
+  } else if (mode === 'shadowing') {
+    document.getElementById('shadowingMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    stopShadowListening();
+    getAudioContext();
+    initShadowingGame();
   } else if (mode === 'kanjiCards') {
     document.getElementById('kanjiCardsMode').classList.add('active');
     stopListening();
@@ -2539,6 +2823,13 @@ function switchMode(mode) {
     stopHrListening();
     getAudioContext();
     initPalTest();
+  } else if (mode === 'roleplay') {
+    document.getElementById('roleplayMode').classList.add('active');
+    stopListening();
+    stopPronounceListening();
+    stopHrListening();
+    getAudioContext();
+    initRoleplayGame();
   }
   if (mode !== 'scene') stopSceneAutoplay();
   if (mode !== 'songs') stopSongPlayback();
@@ -2581,12 +2872,18 @@ function toggleKoreanDisplay(checked){
 }
 
 function speakTTS(text, opts) {
-  if (!('speechSynthesis' in window)) return;
+  if (!('speechSynthesis' in window)) {
+    if (opts && opts.onEnd) opts.onEnd(); // 🦜 섀도잉 등 재생 종료 시점이 필요한 호출부가 멈추지 않도록
+    return;
+  }
   window.speechSynthesis.cancel();
 
   opts = opts || {};
-  const rate = babyTalkMode ? 0.6 : 0.85;
-  const pitch = babyTalkMode ? 1.35 : 1.0;
+  // 🎭 미니 롤플레이용 NPC 목소리 커스터마이징 — opts.rate/opts.pitch가 오면(예: 시나리오별
+  // npc.voice) babyTalkMode 기본값 대신 그 값을 기준으로 삼음(화자 다양성 ④). 지정 없으면
+  // 기존 동작 그대로.
+  const rate = (typeof opts.rate === 'number') ? opts.rate : (babyTalkMode ? 0.6 : 0.85);
+  const pitch = (typeof opts.pitch === 'number') ? opts.pitch : (babyTalkMode ? 1.35 : 1.0);
   // 🔊 부호화 다양성(Encoding Variability): 같은 글자를 매번 똑같은 속도/음높이로만 들으면
   // 그 특정 목소리 패턴에 종속된 얕은 청각 기억이 형성될 수 있어요. opts.jitter가 켜지면
   // 속도/음높이를 매번 아주 살짝(±5%) 무작위로 흔들어 조금씩 다른 소리로 들려줍니다.
@@ -2603,6 +2900,11 @@ function speakTTS(text, opts) {
     playedCount++;
     if(playedCount < repeatCount){
       utterance.onend = () => { setTimeout(playOnce, 450); };
+    } else if (opts.onEnd) {
+      // 🦜 섀도잉 — 재생이 실제로 끝난 시점을 호출부(startShadowAttempt)가 알아야
+      // 그 직후 마이크를 자동으로 켤 수 있음. babyTalkMode로 반복 재생 중일 때는
+      // 마지막 반복이 끝난 뒤에만 호출됨
+      utterance.onend = () => { opts.onEnd(); };
     }
     // cancel() 직후 같은 틱에서 바로 speak()를 부르면 취소 처리가 끝나기 전이라
     // 재생 요청이 씹히는 경우가 있어(특히 화면 전환 직후 첫 재생), 아주 짧게 지연시켜 호출
@@ -2766,8 +3068,14 @@ function createWordChoiceQuizGame(cfg) {
     el(cfg.audioBtnSuffix).disabled = false;
 
     const activeWords = getActiveWords();
-    const randomIndex = Math.floor(Math.random() * activeWords.length);
-    const correctWord = activeWords[randomIndex];
+    // 🧠 어휘 축 SRS/망각곡선 도입 — 순수 랜덤 대신, 잊어버릴 것 같은(=복습 시점이 다가왔거나
+    // 지난) 단어일수록 더 자주 뽑히도록 wordSrsWeightedPick()으로 교체. 히라가나 카드찾기의
+    // "잊어버릴 것 같은 글자가 더 자주 나와요" 원리를 이 공용 팩토리(퀴즈게임/오디오→이모지)에
+    // 그대로 적용함.
+    // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 직전 문제(currentQuestion)와 같은 혼동군 단어는
+    // 이번 후보에서 미리 제외해, 비슷한 단어가 연달아 정답으로 나오지 않게 함.
+    const prevQuizJp = currentQuestion ? currentQuestion.jp : null;
+    const correctWord = wordSrsWeightedPick(excludeVocabConfusionGroup(activeWords, prevQuizJp), 1)[0];
     currentQuestion = correctWord;
 
     if (cfg.renderQuestion) cfg.renderQuestion(correctWord);
@@ -2904,6 +3212,7 @@ function createWordChoiceQuizGame(cfg) {
     el('ResultCorrect').textContent = correctCount;
     el('ResultMaxCombo').textContent = maxCombo;
     el('ResultScore').textContent = score;
+    scheduleNextVocabReviewRound();
   }
 
   return { init, start, generateQuiz, speakCurrent };
@@ -3584,10 +3893,69 @@ let spellingScore = 0;
 let spellingCombo = 0;
 let isSpellingAnswering = false;
 let spellingAdvanceTimer = null;
+// 🎉 결과 화면(10단어 단위) — learning-theory-roadmap.md §6 "미구현으로 남긴 것" 해소.
+// quiz/sentence처럼 "N문제 풀면 결과 화면" 구조를 갖춰야 어휘 복습 세트(VOCAB_REVIEW_GAME_TYPES)의
+// 세 번째 라운드로 합류할 수 있음
+const SPELLING_TOTAL_QUESTIONS = 10;
+let spellingIndex = 0;          // 지금까지 완성한 단어 수(0~10) — 라운드 종료 판정에 사용
+let spellingMaxCombo = 0;
+let spellingCorrectCount = 0;   // 완성한 단어 개수(결과 화면 표시용, spellingIndex와 동일하게 흘러감)
+
+/* 🔄 라운드(10문제) 시작 — 탭을 새로 열거나 "다시 하기"를 누르면 점수/콤보/진행도를 모두
+   초기화하고 첫 문제를 낸다. 기존에는 switchMode()가 generateSpellingQuestion()을 직접
+   불렀지만, 이제는 라운드 상태 초기화가 필요해 이 함수를 거치도록 바꿈 */
+function startSpellingRound() {
+  clearTimeout(spellingAdvanceTimer);
+  spellingIndex = 0;
+  spellingScore = 0;
+  spellingCombo = 0;
+  spellingMaxCombo = 0;
+  spellingCorrectCount = 0;
+
+  const scoreEl = document.getElementById('spellingScore');
+  const comboEl = document.getElementById('spellingCombo');
+  if (scoreEl) scoreEl.textContent = '0';
+  if (comboEl) comboEl.textContent = '0';
+
+  const qScreen = document.getElementById('spellingQuestionScreen');
+  const rScreen = document.getElementById('spellingResultScreen');
+  if (qScreen) qScreen.style.display = 'block';
+  if (rScreen) rScreen.style.display = 'none';
+
+  generateSpellingQuestion();
+}
+
+/* 10단어를 다 완성하면 결과 화면을 보여줌 — quiz/sentence의 showResult()와 동일한 패턴.
+   어휘 복습 세트 진행 중이면 scheduleNextVocabReviewRound()가 잠시 후 자동으로 다음
+   라운드(퀴즈/문장/철자 중 하나)로 넘겨줌(세트 비활성 상태면 바로 반환되어 평소와 동일) */
+function showSpellingResult() {
+  clearTimeout(spellingAdvanceTimer);
+  const qScreen = document.getElementById('spellingQuestionScreen');
+  const rScreen = document.getElementById('spellingResultScreen');
+  if (qScreen) qScreen.style.display = 'none';
+  if (rScreen) rScreen.style.display = 'block';
+
+  const correctEl = document.getElementById('spellingResultCorrect');
+  const comboEl = document.getElementById('spellingResultMaxCombo');
+  const scoreEl = document.getElementById('spellingResultScore');
+  if (correctEl) correctEl.textContent = spellingCorrectCount;
+  if (comboEl) comboEl.textContent = spellingMaxCombo;
+  if (scoreEl) scoreEl.textContent = spellingScore;
+
+  scheduleNextVocabReviewRound();
+}
 
 function generateSpellingQuestion(){
+  if (spellingIndex >= SPELLING_TOTAL_QUESTIONS) {
+    showSpellingResult();
+    return;
+  }
+
   clearTimeout(spellingAdvanceTimer);
   isSpellingAnswering = false;
+
+  const progressEl = document.getElementById('spellingProgress');
+  if (progressEl) progressEl.textContent = spellingIndex + 1;
 
   const feedbackEl = document.getElementById('spellingFeedback');
   if(feedbackEl) feedbackEl.textContent = '';
@@ -3766,6 +4134,9 @@ function selectSpellingLetter(btn){
       isSpellingAnswering = true;
       spellingScore += 10;
       spellingCombo += 1;
+      if (spellingCombo > spellingMaxCombo) spellingMaxCombo = spellingCombo;
+      spellingIndex += 1;
+      spellingCorrectCount += 1;
       const scoreEl = document.getElementById('spellingScore');
       const comboEl = document.getElementById('spellingCombo');
       if(scoreEl) scoreEl.textContent = spellingScore;
@@ -3835,18 +4206,51 @@ let wsBound = false;
 let wsHintTimer = null;
 let wsHintToken = 0;
 
+/* 🎯 학습이론 로드맵 §16 — 작업기억 스팬 진단 결과(workingMemorySpan, 3~9)에 맞춰
+   낱말찾기 격자 크기의 "추천 초기값"을 정해주는 헬퍼(바람직한 어려움).
+   진단을 아직 하지 않은 사용자(profile에 값이 없음)에게는 null을 반환해 기존 기본값(8)을
+   그대로 쓰게 한다. 사용자가 버튼을 한 번이라도 직접 눌렀다면 그 이후로는 이 추천을
+   다시 덮어쓰지 않도록 별도 localStorage 플래그(WS_SIZE_MANUAL_KEY)로 기억해둔다. */
+const WS_SIZE_MANUAL_KEY = 'kotobaWsSizeManual';
+
+function isWsSizeManuallySet(){
+  try { return localStorage.getItem(WS_SIZE_MANUAL_KEY) === '1'; }
+  catch (e) { return false; }
+}
+
+function markWsSizeManuallySet(){
+  try { localStorage.setItem(WS_SIZE_MANUAL_KEY, '1'); }
+  catch (e) { /* 저장 실패해도 크기 변경 자체는 정상 동작 */ }
+}
+
+function recommendWsGridSizeFromSpan(span){
+  if (typeof span !== 'number' || Number.isNaN(span)) return null;
+  return Math.max(WS_MIN_SIZE, Math.min(WS_MAX_SIZE, Math.round(span)));
+}
+
+function applyRecommendedWsGridSizeIfNeeded(){
+  if (isWsSizeManuallySet()) return; // 이미 직접 선택한 적 있으면 추천으로 덮어쓰지 않음
+  const profile = loadLearnerProfile();
+  const recommended = recommendWsGridSizeFromSpan(profile.workingMemorySpan);
+  if (recommended !== null) wsGridSize = recommended;
+}
+
 function initWordSearchGame(){
   wsCombo = 0;
   const comboEl = document.getElementById('wsCombo');
   if(comboEl) comboEl.textContent = wsCombo;
+  applyRecommendedWsGridSizeIfNeeded();
   updateWordSearchSizeButtons();
   renderWordSearchPuzzle();
   attachWordSearchPointerEvents();
 }
 
-/* 🔢 격자 크기 선택 버튼 클릭 시 호출 — 크기를 바꾸고 새 퍼즐을 만듭니다 */
+/* 🔢 격자 크기 선택 버튼 클릭 시 호출 — 크기를 바꾸고 새 퍼즐을 만듭니다.
+   사용자가 직접 누른 것이므로 이후로는 작업기억 스팬 기반 자동 추천을 덮어쓰지 않도록
+   "수동 선택" 플래그를 기록한다. */
 function setWordSearchGridSize(size){
   size = Math.max(WS_MIN_SIZE, Math.min(WS_MAX_SIZE, parseInt(size, 10) || 8));
+  markWsSizeManuallySet();
   if(size === wsGridSize){
     renderWordSearchPuzzle();
     return;
@@ -3873,17 +4277,42 @@ function pickWordSearchWords(){
   if(pool.length < 4){
     pool = DICTIONARY.filter(fitsGrid);
   }
-  const shuffled = pool.slice().sort(() => Math.random() - 0.5);
-  // jp가 중복되지 않는 단어만 선택
-  const chosen = [];
+  // jp가 중복되지 않는 단어만 후보로 남김(뽑기 전에 미리 걸러둠)
   const seen = new Set();
-  for(const w of shuffled){
+  const uniquePool = [];
+  for(const w of pool){
     if(seen.has(w.jp)) continue;
     seen.add(w.jp);
-    chosen.push(w);
-    if(chosen.length >= 4) break;
+    uniquePool.push(w);
   }
-  return chosen;
+  // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 wordSrsWeightedPick()으로 교체. 로드맵에서
+  // "한 번에 4단어를 동시 배치해야 해서 특정 단어들이 자꾸 함께 뽑히는 편향이 생길 수 있다"고
+  // 우려했던 부분은, 이 함수가 중복 없이 count개를 뽑는(splice) 구조라 오히려 순수 랜덤보다
+  // "그때그때 잊어가는 단어"가 골고루 섞여 들어가는 효과만 생기고, 매번 같은 4개 조합이
+  // 고정적으로 묶이지는 않음(가중치는 매 호출 시점의 최신 wordStats로 다시 계산됨).
+  const picked = wordSrsWeightedPick(uniquePool, 4);
+  // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 낱말찾기는 4단어가 한 화면에 동시에 보이므로,
+  // "순서 재배치"가 아니라 "같은 혼동군 단어가 함께 뽑히면 다른 후보로 교체"하는 방식을 씀.
+  return avoidSimultaneousVocabConfusion(picked, uniquePool);
+}
+
+/* 4단어가 한 화면에 동시에 노출되는 낱말찾기 전용 혼동군 회피 — 이미 뽑힌 조합(picked) 안에서
+   같은 혼동군끼리 겹치는 자리가 있으면, 겹치지 않는 다른 후보(pool)로 바꿔치기 시도한다.
+   교체할 만한 후보를 못 찾으면(활성 세트가 혼동군 단어로만 구성된 경우 등) 그 자리는
+   충돌을 감수하고 그대로 둔다. */
+function avoidSimultaneousVocabConfusion(picked, pool) {
+  const result = picked.slice();
+  for (let i = 1; i < result.length; i++) {
+    const hasConflict = result.some((w, idx) => idx < i && isSameVocabConfusionGroup(w.jp, result[i].jp));
+    if (!hasConflict) continue;
+    const usedJp = new Set(result.map(w => w.jp));
+    const replacement = pool.find(w =>
+      !usedJp.has(w.jp) &&
+      !result.some((w2, idx) => idx !== i && isSameVocabConfusionGroup(w2.jp, w.jp))
+    );
+    if (replacement) result[i] = replacement;
+  }
+  return result;
 }
 
 function placeWordInGrid(grid, chars, SIZE){
@@ -4191,8 +4620,13 @@ function generateRiddleQuestion(){
   let pool = RIDDLES;
   if(pool.length > 1 && previousRiddleJp){
     pool = pool.filter(r => r.jp !== previousRiddleJp);
+    pool = excludeVocabConfusionGroup(pool, previousRiddleJp); // 🔀 어휘 축 혼동 단어 인터리빙(§17)
   }
-  const riddle = pool[Math.floor(Math.random() * pool.length)];
+  // 🧠 어휘 축 SRS/망각곡선 — recordWordResult(currentRiddle, ...)로 이미 wordStats가 쌓이고
+  // 있었지만(정오답 판정에만 쓰이고 출제 순서엔 미반영), 순수 랜덤 대신 wordSrsWeightedPick()으로
+  // 교체 — RIDDLES 항목도 jp 필드를 그대로 갖고 있어 단어 게임들과 동일한 방식으로 바로 적용 가능함
+  // (로드맵 9번 섹션에서 "단어와 다른 구조라 대상 밖"이라 남겨뒀던 항목).
+  const riddle = wordSrsWeightedPick(pool, 1)[0];
   currentRiddle = riddle;
   previousRiddleJp = riddle.jp;
   riddleHintIndex = 1;
@@ -4950,6 +5384,12 @@ function createSequencePickQuizGame(cfg) {
     el('ResultCorrect').textContent = correctCount;
     el('ResultMaxCombo').textContent = maxCombo;
     el('ResultScore').textContent = score;
+    // 🆕 이 팩토리는 문장 맞히기(sentence, 복습 세트 대상)와 합성어 맞추기(compound) 둘이
+    // 공유함. compound는 애초에 어휘 복습 세트 큐(VOCAB_REVIEW_GAME_TYPES)에 없으므로,
+    // wordReviewSessionActive가 true인 상태에서 compound가 끝날 일은 정상 흐름상 없음 —
+    // 그래도 안전하게 같은 훅을 공용으로 둠(scheduleNextVocabReviewRound 내부에서
+    // 세트가 진행 중이 아니면 곧바로 반환).
+    scheduleNextVocabReviewRound();
   }
 
   return { init, start, generateQuiz, speakCurrent };
@@ -4964,7 +5404,9 @@ const sentenceGame = createSequencePickQuizGame({
     // 현재 연령대 단어 범위에서 두 단어 모두 사용 가능한 문장만 후보로 삼음
     const validSentences = SENTENCES.filter(s => s.words.every(jp => activeJpSet.has(jp)));
     const pool = validSentences.length > 0 ? validSentences : SENTENCES;
-    const sentence = pool[Math.floor(Math.random() * pool.length)];
+    // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 pairSrsWeightedPick()으로 교체(두 단어의
+    // 평균 망각확률이 높은 문장일수록 더 자주 뽑힘, 9번 섹션에서 남겨뒀던 확장 항목)
+    const sentence = pairSrsWeightedPick(pool, s => s.words);
     const word1 = DICTIONARY.find(w => w.jp === sentence.words[0]);
     const word2 = DICTIONARY.find(w => w.jp === sentence.words[1]);
     return {
@@ -5021,7 +5463,9 @@ const compoundGame = createSequencePickQuizGame({
   buildItem(activeWords) {
     const validCompounds = COMPOUNDS.filter(c => c.level <= currentAppLevel);
     const pool = validCompounds.length > 0 ? validCompounds : COMPOUNDS;
-    const compound = pool[Math.floor(Math.random() * pool.length)];
+    // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 pairSrsWeightedPick()으로 교체(구성 단어 두 개의
+    // 평균 망각확률이 높은 합성어일수록 더 자주 뽑힘, 9번 섹션에서 남겨뒀던 확장 항목)
+    const compound = pairSrsWeightedPick(pool, c => [c.p1.jp, c.p2.jp]);
     return {
       part1: compound.p1,
       part2: compound.p2,
@@ -5312,8 +5756,11 @@ function generateWritingQuestion() {
   feedbackEl.textContent = '';
   feedbackEl.style.color = 'var(--sumi)';
 
-  const randomIndex = Math.floor(Math.random() * getActiveWords().length);
-  currentWritingWord = getActiveWords()[randomIndex];
+  // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 wordSrsWeightedPick()으로 교체(퀴즈 팩토리와 동일 원리).
+  // 회상(C채널) 게임이라 철자 맞추기와 함께 잊어버릴 것 같은 단어를 우선 복습시키는 효과가 큼.
+  // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 직전 단어와 같은 혼동군은 이번 후보에서 미리 제외.
+  const prevWriteJp = currentWritingWord ? currentWritingWord.jp : null;
+  currentWritingWord = wordSrsWeightedPick(excludeVocabConfusionGroup(getActiveWords(), prevWriteJp), 1)[0];
 
   emojiEl.style.animation = 'none';
   void emojiEl.offsetWidth;
@@ -8486,7 +8933,15 @@ function recordWordResult(word, isCorrect) {
     if (!wordStats[word.jp].channels[stage]) wordStats[word.jp].channels[stage] = { correct: 0, wrong: 0 };
     if (isCorrect) wordStats[word.jp].channels[stage].correct += 1;
     else wordStats[word.jp].channels[stage].wrong += 1;
+    saveLastVocabModality(currentGameMode); // 🔀 어휘 축 인출 단서 다변화용 — 방금 쓴 모달리티를 기록
   }
+
+  // 🧠 어휘 축 SRS/망각곡선 도입 — 히라가나 축(hsStats/hwStats/hrStats)과 완전히 동일한
+  // srsUpdateStat()을 그대로 재사용함. wordStats[jp]에는 채널별(B/C/D) 정오답과는 별개로
+  // "이 단어 전체"를 대표하는 srsStage 하나만 둠(히라가나처럼 게임별로 별도 엔진을 두지 않고,
+  // 어느 게임에서 맞히든 같은 단어면 같은 SRS 시계를 공유). srsUpdateStat이 stat.srsStage가
+  // 숫자가 아니면 0으로 채워주므로, 기존 저장 데이터(srsStage 없음)도 방어 코드 없이 자연히 처리됨.
+  srsUpdateStat(wordStats[word.jp], isCorrect);
 
   saveWordStats();
   updateGalleryCardRate(word.jp);
@@ -8507,6 +8962,82 @@ function saveWordStats() {
   try {
     localStorage.setItem(WORD_STATS_KEY, JSON.stringify(wordStats));
   } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 🧠 어휘 축 SRS 가중 뽑기 — srsWeightedPick(히라가나 카드찾기/쓰기 공용, ch 키 기준)을
+   단어(jp 키) 기준으로 그대로 일반화한 버전. srsForgetProbability는 stat 객체의 형태만
+   보므로(srsStage/lastReviewAt) 수정 없이 그대로 재사용 가능함.
+   아직 한 번도 만나지 않은 단어(wordStats에 기록 없음)는 srsForgetProbability가
+   lastReviewAt이 없을 때 망각확률 1(최댓값)을 반환하므로, 신규 단어가 자연히 최우선으로
+   뽑힘 — 히라가나 축과 동일한 동작. */
+function wordSrsWeightedPick(words, count) {
+  const now = Date.now();
+  const pool = words.map(item => {
+    const stat = wordStats[item.jp] || { srsStage: 0, lastReviewAt: null };
+    const forget = srsForgetProbability(stat, now);
+    return { item, weight: 0.05 + forget * 0.95 };
+  });
+  const result = [];
+  const n = Math.min(count, pool.length);
+  for (let i = 0; i < n; i++) {
+    const totalWeight = pool.reduce((sum, p) => sum + p.weight, 0);
+    let r = Math.random() * totalWeight;
+    let pickIdx = pool.length - 1;
+    for (let j = 0; j < pool.length; j++) {
+      r -= pool[j].weight;
+      if (r <= 0) { pickIdx = j; break; }
+    }
+    result.push(pool[pickIdx].item);
+    pool.splice(pickIdx, 1);
+  }
+  return result;
+}
+
+/* 🧠 문장 맞히기/합성어 맞추기용 SRS 가중 뽑기 — wordSrsWeightedPick()은 "단어 하나"를 뽑는
+   구조라 그대로 쓸 수 없음(9번 섹션에서 범위 밖으로 남겨뒀던 항목). 문장/합성어는 항상
+   "단어 두 개의 쌍"에서 하나를 고르므로, 후보 각각을 구성하는 두 단어의 망각확률 평균을
+   가중치로 사용함 — 두 단어 중 하나라도 최근에 안 봐서 잊어가고 있으면 그 쌍이 더 자주
+   나옴. getJpPair(item)은 그 후보에서 단어 두 개의 jp를 뽑아내는 함수(문장은 words 배열을
+   그대로, 합성어는 p1.jp/p2.jp를 꺼내 씀)만 다르게 넘기면 되고, 가중치 공식(0.05 + forget*0.95)은
+   wordSrsWeightedPick과 동일하게 맞춰 두 게임 사이에 일관성을 유지함. */
+function pairSrsWeightedPick(items, getJpPair) {
+  const now = Date.now();
+  const pool = items.map(item => {
+    const [jp1, jp2] = getJpPair(item);
+    const stat1 = wordStats[jp1] || { srsStage: 0, lastReviewAt: null };
+    const stat2 = wordStats[jp2] || { srsStage: 0, lastReviewAt: null };
+    const forget1 = srsForgetProbability(stat1, now);
+    const forget2 = srsForgetProbability(stat2, now);
+    const avgForget = (forget1 + forget2) / 2;
+    return { item, weight: 0.05 + avgForget * 0.95 };
+  });
+  const totalWeight = pool.reduce((sum, p) => sum + p.weight, 0);
+  let r = Math.random() * totalWeight;
+  for (const p of pool) {
+    r -= p.weight;
+    if (r <= 0) return p.item;
+  }
+  return pool[pool.length - 1].item;
+}
+
+/* 🔀 어휘 축에서 방금 사용한 게임 모드의 모달리티를 저장/불러옴 — GAME_MODALITY_MAP(data.js)
+   조회 결과({present, response})를 그대로 JSON으로 저장. pickWordAxisMode()가 "직전과 다른
+   모달리티" 후보를 고를 때 사용함. 기록이 없으면(첫 방문 등) null 반환. */
+function saveLastVocabModality(mode) {
+  const modality = getGameModality(mode);
+  if (!modality) return;
+  try {
+    localStorage.setItem(LAST_VOCAB_MODALITY_KEY, JSON.stringify(modality));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+function loadLastVocabModality() {
+  try {
+    const raw = localStorage.getItem(LAST_VOCAB_MODALITY_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /* 단어 하나가 지금 A~E 중 어느 단계에 있는지 판정 — computeCharGameStage(히라가나 축)를
@@ -8544,6 +9075,124 @@ function computeVocabStageDistribution() {
   const dist = { A: 0, B: 0, C: 0, D: 0, E: 0 };
   jpList.forEach(jp => { dist[computeWordGameStage(jp)] += 1; });
   return { dist, total: jpList.length };
+}
+
+/* 📚 어휘 전용 복습 세트 — learning-theory-roadmap.md Part 4 §5 "다음 세션 추천"의 첫 번째 후보.
+   히라가나의 복습 세트(startReviewSession)와 같은 아이디어를 어휘 축에 그대로 적용함:
+   잊어버릴 것 같은(=SRS 망각확률이 높은) 단어만 모아서, 이미 있는 단어 게임(퀴즈·문장 맞히기·
+   철자 맞추기)을 랜덤 순서로 이어서 풀게 함. 새 게임을 만들지 않고, getActiveWords()가 후보
+   단어로만 좁혀지도록 해서(위 getActiveWords() 참고) 기존 게임 로직은 전혀 건드리지 않음.
+   - 철자 맞추기(spelling, C채널)는 처음엔 "10문제 풀면 결과 화면" 같은 명확한 종료 시점이 없어
+     세트 구조에 맞지 않는다는 이유로 제외됐었지만, §7 다음 세션에서 10단어 단위 결과 화면
+     (spellingIndex/showSpellingResult(), generateSpellingQuestion() 바로 위)을 추가해 이제
+     quiz/sentence와 동일한 방식으로 합류시킴. */
+let wordReviewSessionActive = false;
+let wordReviewSessionWords = [];
+let wordReviewSessionGameQueue = [];
+let wordReviewSessionRoundIndex = 0;
+const VOCAB_REVIEW_GAME_TYPES = ['quiz', 'sentence', 'spelling'];
+const VOCAB_REVIEW_SESSION_ROUNDS = VOCAB_REVIEW_GAME_TYPES.length;
+
+/* 복습 후보 단어 목록 — 한 번이라도 만난 단어(wordStats에 기록 있음) 중 SRS 망각확률이
+   0.5 이상인 것을 우선 후보로 삼음. 그런 단어가 하나도 없으면(다들 최근에 복습했거나
+   아직 재인(B)~회상(C) 단계라 망각확률 계산 자체가 안정적이지 않은 경우) 아직 발화(D)까지
+   못 간 B/C 단계 단어로 대신 채움 — 히라가나 복습 세트의 "복습 필요 없으면 학습 중으로 대체"
+   원칙과 동일함 */
+function getVocabReviewCandidateWords() {
+  const words = getActiveWords();
+  const now = Date.now();
+  const dueWords = words.filter(w => {
+    const stat = wordStats[w.jp];
+    if (!stat) return false;
+    return srsForgetProbability(stat, now) >= 0.5;
+  });
+  if (dueWords.length > 0) return dueWords;
+  return words.filter(w => {
+    const stage = computeWordGameStage(w.jp);
+    return stage === 'B' || stage === 'C';
+  });
+}
+
+function buildVocabReviewGameQueue(rounds) {
+  const queue = [];
+  while (queue.length < rounds) {
+    queue.push(...VOCAB_REVIEW_GAME_TYPES.slice().sort(() => Math.random() - 0.5));
+  }
+  return queue.slice(0, rounds);
+}
+
+function startVocabReviewSession() {
+  loadWordStats();
+
+  const words = getVocabReviewCandidateWords();
+  if (words.length === 0) {
+    alert('지금은 복습이 필요한 단어가 없어요! 정말 잘하고 있어요 🎉');
+    return;
+  }
+
+  wordReviewSessionWords = words;
+  wordReviewSessionGameQueue = buildVocabReviewGameQueue(VOCAB_REVIEW_SESSION_ROUNDS);
+  wordReviewSessionRoundIndex = 0;
+  wordReviewSessionActive = true;
+  playNextVocabReviewRound();
+}
+
+function playNextVocabReviewRound() {
+  if (wordReviewSessionRoundIndex >= wordReviewSessionGameQueue.length) {
+    finishVocabReviewSession();
+    return;
+  }
+  const gameType = wordReviewSessionGameQueue[wordReviewSessionRoundIndex];
+  wordReviewSessionRoundIndex += 1;
+  updateVocabReviewSessionBanner();
+
+  // quiz/sentence 둘 다 switchMode() 안에서 문제 생성까지 마쳐서(initQuizGame/initSentenceGame),
+  // 히라가나 복습 세트처럼 별도 시작 함수를 따로 호출할 필요가 없음
+  launchGame(gameType);
+}
+
+/* 게임 결과 화면이 뜬 뒤, 어휘 복습 세트 진행 중이라면 잠시 보여준 다음 자동으로 다음 게임으로
+   넘어감 — 세트가 진행 중이 아닐 때는 바로 반환하므로 평소 게임 플레이에는 영향 없음 */
+function scheduleNextVocabReviewRound() {
+  if (!wordReviewSessionActive) return;
+  setTimeout(() => { playNextVocabReviewRound(); }, 2200);
+}
+
+function finishVocabReviewSession() {
+  wordReviewSessionActive = false;
+  wordReviewSessionWords = [];
+  updateVocabReviewSessionBanner();
+  alert('어휘 복습 세트를 모두 마쳤어요! 🎉 장기기억 현황에서 얼마나 좋아졌는지 확인해보세요.');
+  exitGameFullscreen();
+  showTopMenu();
+  openMenuPanel('menuLtmLevel');
+  renderLtmDashboard();
+}
+
+function cancelVocabReviewSession() {
+  if (!wordReviewSessionActive) return;
+  wordReviewSessionActive = false;
+  wordReviewSessionWords = [];
+  wordReviewSessionGameQueue = [];
+  wordReviewSessionRoundIndex = 0;
+  updateVocabReviewSessionBanner();
+}
+
+function updateVocabReviewSessionBanner() {
+  const banner = document.getElementById('vocabReviewSessionBanner');
+  if (!banner) return;
+  if (!wordReviewSessionActive) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  const total = wordReviewSessionGameQueue.length;
+  const current = Math.min(wordReviewSessionRoundIndex, total);
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <span>📚 어휘 복습 세트 ${current}/${total} 진행 중</span>
+    <button class="review-session-cancel-btn" onclick="cancelVocabReviewSession()">그만하기</button>
+  `;
 }
 
 function getWrongRate(jp) {
@@ -8764,9 +9413,12 @@ function generatePronounceQuestion() {
   pronounceScoreEl.textContent = pronounceScore;
   pronounceComboEl.textContent = pronounceCombo;
 
+  // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 wordSrsWeightedPick()으로 교체(퀴즈 팩토리와 동일 원리).
+  // 발화(D채널) 게임이라 문장 맞히기와 함께 잊어버릴 것 같은 단어를 우선 말해보게 하는 효과가 큼.
+  // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 직전 단어와 같은 혼동군은 이번 후보에서 미리 제외.
   const activeWords = getActiveWords();
-  const randomIndex = Math.floor(Math.random() * activeWords.length);
-  currentPronounceWord = activeWords[randomIndex];
+  const prevPronounceJp = currentPronounceWord ? currentPronounceWord.jp : null;
+  currentPronounceWord = wordSrsWeightedPick(excludeVocabConfusionGroup(activeWords, prevPronounceJp), 1)[0];
 
   pronounceEmojiEl.innerHTML = emojiVisualHTML(currentPronounceWord);
   pronounceEmojiEl.style.animation = 'none';
@@ -9201,6 +9853,317 @@ function stopHrListening(){
   }
 }
 
+/* 🦜 섀도잉 미니게임 로직 (Part 3 §2)
+   원어민 음성을 듣는 즉시 거의 동시에 따라 말하는 섀도잉 훈련.
+   흐름: 이모지 등장 → speakTTS()로 단어 재생(jitter로 매번 살짝 다른 속도/피치) →
+   재생이 실제로 끝난 시점(onEnd 콜백)에 맞춰 마이크 자동 시작 → 실제 재생 시간 × 1.2를
+   인식 제한 시간으로 사용 → 인식된 발음에 정답 단어가 포함되어 있으면 정답 처리.
+   hr(히라가나 읽기)과 달리 재도전 없이 1회 시도로 끝냄(즉각성이 섀도잉의 핵심) */
+const ShadowRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function initShadowingGame(){
+  clearTimeout(shadowAttemptTimer);
+  clearTimeout(shadowAdvanceTimer);
+  stopShadowListening();
+  showDrillScreen('shadow', 'start');
+  shadowCorrectScore = 0; shadowWrongScore = 0; shadowIndex = 0;
+  document.getElementById('shadowCorrectScore').textContent = '0';
+  document.getElementById('shadowWrongScore').textContent = '0';
+  document.getElementById('shadowProgress').textContent = '0';
+
+  if(!ShadowRecognitionAPI){
+    document.getElementById('shadowUnsupportedMsg').style.display = 'block';
+  }
+}
+
+/* 🎙️ 자기상관(autocorrelation) 기반 대략적인 기본 주파수(피치) 추정 — 음악적으로 정밀한
+   피치 추출이 목표가 아니라, "억양이 오르내리는지" 대강의 트렌드만 보려는 것이라 임계값
+   기반의 단순한 근사치로 충분하다고 보고 최소 구현으로 작성함. */
+function estimateShadowPitchHz(buf, sampleRate) {
+  const SIZE = buf.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return null; // 무음/너무 작은 소리면 추정하지 않음
+
+  let r1 = 0, r2 = SIZE - 1;
+  const threshold = 0.2;
+  for (let i = 0; i < SIZE / 2; i++) { if (Math.abs(buf[i]) < threshold) { r1 = i; break; } }
+  for (let i = 1; i < SIZE / 2; i++) { if (Math.abs(buf[SIZE - i]) < threshold) { r2 = SIZE - i; break; } }
+  const trimmed = buf.slice(r1, r2);
+  const n = trimmed.length;
+  if (n < 2) return null;
+
+  const c = new Array(n).fill(0);
+  for (let lag = 0; lag < n; lag++) {
+    for (let i = 0; i < n - lag; i++) c[lag] += trimmed[i] * trimmed[i + lag];
+  }
+  let d = 0;
+  while (d < n - 1 && c[d] > c[d + 1]) d++;
+  let maxVal = -1, maxPos = -1;
+  for (let i = d; i < n; i++) {
+    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+  }
+  if (maxPos <= 0) return null;
+  const freq = sampleRate / maxPos;
+  if (freq < 70 || freq > 500) return null; // 아이 목소리 기본 주파수를 벗어나면 잡음으로 간주
+  return freq;
+}
+
+/* 섀도잉 시도 시작과 동시에(마이크 인식과 별개로) 짧은 간격으로 피치를 샘플링한다.
+   AudioContext/getUserMedia를 지원하지 않거나 권한이 거부되면 조용히 아무 일도 하지
+   않는다 — 억양 피드백이 안 나올 뿐, 정답 판정 자체는 항상 정상 동작한다. */
+function startShadowPitchSampling() {
+  shadowPitchSamples = [];
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return;
+  try {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      shadowPitchStream = stream;
+      shadowPitchAudioCtx = new AC();
+      const source = shadowPitchAudioCtx.createMediaStreamSource(stream);
+      shadowPitchAnalyser = shadowPitchAudioCtx.createAnalyser();
+      shadowPitchAnalyser.fftSize = 2048;
+      source.connect(shadowPitchAnalyser);
+      const buf = new Float32Array(shadowPitchAnalyser.fftSize);
+      shadowPitchIntervalTimer = setInterval(() => {
+        if (!shadowPitchAnalyser) return;
+        shadowPitchAnalyser.getFloatTimeDomainData(buf);
+        const hz = estimateShadowPitchHz(buf, shadowPitchAudioCtx.sampleRate);
+        if (hz) shadowPitchSamples.push(hz);
+      }, SHADOW_PITCH_SAMPLE_INTERVAL_MS);
+    }).catch(() => { /* 마이크 권한 거부 등 — 억양 분석만 조용히 건너뜀 */ });
+  } catch (e) { /* AudioContext 생성 실패 등 — 조용히 건너뜀 */ }
+}
+
+/* 피치 샘플링용으로 별도로 열어둔 마이크 스트림/오디오 컨텍스트를 정리한다.
+   SpeechRecognition이 쓰는 마이크와는 완전히 별개 스트림이라 서로 독립적으로 열고 닫는다. */
+function stopShadowPitchSampling() {
+  if (shadowPitchIntervalTimer) { clearInterval(shadowPitchIntervalTimer); shadowPitchIntervalTimer = null; }
+  shadowPitchAnalyser = null;
+  if (shadowPitchStream) {
+    try { shadowPitchStream.getTracks().forEach(t => t.stop()); } catch (e) { /* 무시 */ }
+    shadowPitchStream = null;
+  }
+  if (shadowPitchAudioCtx) {
+    try { shadowPitchAudioCtx.close(); } catch (e) { /* 무시 */ }
+    shadowPitchAudioCtx = null;
+  }
+}
+
+/* 사용자가 말한 시간(recognitionDurationMs)과 TTS 재생 시간(ttsElapsedMs)의 비율을 비교해
+   "리듬이 비슷한지"만 코멘트한다. 판정에는 영향 없는 덤 정보라 비슷하지 않을 때는 굳이
+   지적하지 않고 빈 문자열을 반환한다(1차 구현은 긍정 피드백만). */
+function computeShadowRhythmNote(recognitionDurationMs, ttsElapsedMs) {
+  if (!ttsElapsedMs || ttsElapsedMs <= 0 || !recognitionDurationMs || recognitionDurationMs <= 0) return '';
+  const ratio = recognitionDurationMs / ttsElapsedMs;
+  return (ratio >= SHADOW_RHYTHM_RATIO_MIN && ratio <= SHADOW_RHYTHM_RATIO_MAX) ? ' · 🏃 리듬이 비슷해요' : '';
+}
+
+/* 이번 시도 중 뽑힌 피치 샘플들의 최댓값-최솟값 차이가 충분히 크면 "억양이 살아있다"고
+   코멘트한다(원어민 TTS 피치와 직접 비교하는 것은 아님 — 브라우저 SpeechSynthesis는 재생
+   중인 오디오 스트림을 코드로 가져올 방법이 없어 "목표 피치 곡선"을 만들 수 없기 때문에,
+   1차 구현은 "단조로운 톤이 아니라 오르내림이 있는지"만 보는 것으로 범위를 좁힘). */
+function computeShadowIntonationNote(samples) {
+  if (!samples || samples.length < 3) return '';
+  const maxHz = Math.max(...samples);
+  const minHz = Math.min(...samples);
+  return (maxHz - minHz) >= SHADOW_INTONATION_RANGE_HZ ? ' · 🎵 억양이 살아있어요' : '';
+}
+
+function startShadowingGame(){
+  clearTimeout(shadowAttemptTimer);
+  clearTimeout(shadowAdvanceTimer);
+  stopShadowListening();
+  shadowCorrectScore = 0; shadowWrongScore = 0; shadowIndex = 0;
+  document.getElementById('shadowCorrectScore').textContent = '0';
+  document.getElementById('shadowWrongScore').textContent = '0';
+
+  // 활성 단어 목록에서 10개를 뽑아 이번 판의 문제 세트를 만듭니다.
+  // 🧠 어휘 축 SRS/망각곡선 — shadowHandleResult()가 이미 recordWordResult()로 wordStats를
+  // 갱신하고 있어(정오답 판정에 영향은 없음, 통계만 쌓아둔 상태였음), 순수 랜덤 대신
+  // wordSrsWeightedPick()으로 교체해 잊어가는 단어일수록 더 자주 나오게 함. 매번 활성 단어
+  // 전체를 다시 넘겨(누적 없이 매 호출 독립) 중복 등장을 허용 — 활성 세트가 10개 미만이어도
+  // 기존처럼 항상 10문제가 채워짐(로드맵 10번 섹션에서 예고했던 "shadowQuestions 채우는 부분에
+  // 같은 방식 적용" 확장).
+  const activeWords = getActiveWords();
+  shadowQuestions = [];
+  for(let i = 0; i < 10; i++){
+    shadowQuestions.push(wordSrsWeightedPick(activeWords, 1)[0]);
+  }
+  // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 이번엔 10문제를 한 번에 미리 뽑아두는 배치 구조라,
+  // 다른 게임들의 "직전 단어 제외" 방식 대신 히라가나 축과 동일한 순서 재배치를 적용.
+  shadowQuestions = spaceOutVocabConfusionGroups(shadowQuestions);
+
+  showDrillScreen('shadow', 'question');
+  showShadowingQuestion();
+}
+
+function showShadowingQuestion(){
+  if(shadowIndex >= shadowQuestions.length){
+    shadowShowResult();
+    return;
+  }
+  shadowAnswered = false;
+  clearTimeout(shadowAttemptTimer);
+  clearTimeout(shadowAdvanceTimer);
+
+  document.getElementById('shadowProgress').textContent = shadowIndex + 1;
+
+  const word = shadowQuestions[shadowIndex];
+  currentShadowWord = word;
+
+  const emojiEl = document.getElementById('shadowEmoji');
+  emojiEl.innerHTML = emojiVisualHTML(word);
+  emojiEl.style.animation = 'none';
+  void emojiEl.offsetWidth;
+  emojiEl.style.animation = 'quizAppear .4s cubic-bezier(.175, .885, .32, 1.275)';
+
+  const recognizedEl = document.getElementById('shadowRecognizedText');
+  recognizedEl.textContent = '';
+  recognizedEl.classList.remove('listening', 'preparing');
+
+  document.getElementById('shadowStatusLabel').textContent = '🔊 소리를 듣는 중...';
+  document.getElementById('shadowFeedback').textContent = '';
+
+  // 재생이 실제로 끝난 시각을 알아야 "재생 길이 × 1.2"를 계산할 수 있어, 재생 시작 직전 시각을 기록해둠
+  const ttsStartedAt = Date.now();
+  speakTTS(word.jp, {
+    jitter: true,
+    onEnd: () => {
+      if (shadowAnswered || currentShadowWord !== word) return; // 이미 넘어간 문제라면 무시
+      const elapsed = Date.now() - ttsStartedAt;
+      const windowMs = Math.min(SHADOW_MAX_TIME_MS, Math.max(SHADOW_MIN_TIME_MS, elapsed * SHADOW_WINDOW_RATIO));
+      startShadowAttempt(windowMs, elapsed);
+    }
+  });
+}
+
+function startShadowAttempt(windowMs, ttsElapsedMs){
+  if(!ShadowRecognitionAPI){
+    shadowHandleResult(''); // 음성 인식 미지원 브라우저 — 바로 실패 처리해 흐름이 멈추지 않게 함
+    return;
+  }
+
+  const recognizedEl = document.getElementById('shadowRecognizedText');
+  recognizedEl.textContent = '대기중';
+  recognizedEl.classList.add('listening');
+  document.getElementById('shadowStatusLabel').textContent = '🎙️ 지금 바로 따라 말해보세요!';
+
+  animateTimerBar('shadowTimerFill', windowMs);
+
+  // 🎙️ 섀도잉 리듬·억양 정밀 비교(§14) — 마이크 인식 시작 시각을 기록해두고, 별도 마이크
+  // 스트림으로 피치 샘플링을 함께 시작함(둘 다 판정에는 영향 없는 "덤" 정보).
+  shadowAttemptStartedAt = Date.now();
+  startShadowPitchSampling();
+
+  shadowRecognition = new ShadowRecognitionAPI();
+  shadowRecognition.lang = 'ja-JP';
+  shadowRecognition.continuous = false;
+  shadowRecognition.interimResults = false;
+  shadowRecognition.maxAlternatives = 3;
+  shadowListening = true;
+  let resultHandled = false;
+
+  shadowRecognition.onresult = (event) => {
+    if(resultHandled) return;
+    let spoken = "";
+    for(let i = 0; i < event.results.length; i++){
+      spoken += event.results[i][0].transcript;
+    }
+    resultHandled = true;
+    try{ shadowRecognition.stop(); }catch(e){}
+    const recognitionDurationMs = Date.now() - shadowAttemptStartedAt;
+    stopShadowPitchSampling();
+    const extraNote = computeShadowRhythmNote(recognitionDurationMs, ttsElapsedMs) +
+      computeShadowIntonationNote(shadowPitchSamples);
+    shadowHandleResult(spoken.trim(), extraNote);
+  };
+
+  shadowRecognition.onerror = () => {
+    if(resultHandled) return;
+    resultHandled = true;
+    stopShadowPitchSampling();
+    shadowHandleResult('');
+  };
+
+  shadowRecognition.onend = () => {
+    shadowListening = false;
+  };
+
+  try{ shadowRecognition.start(); }catch(e){}
+
+  clearTimeout(shadowAttemptTimer);
+  shadowAttemptTimer = setTimeout(() => {
+    if(resultHandled) return;
+    resultHandled = true;
+    try{ shadowRecognition.stop(); }catch(e){}
+    stopShadowPitchSampling();
+    shadowHandleResult('');
+  }, windowMs);
+}
+
+function shadowHandleResult(spokenText, extraNote = ''){
+  if(shadowAnswered) return;
+  shadowAnswered = true;
+  clearTimeout(shadowAttemptTimer);
+  stopShadowListening();
+
+  const target = currentShadowWord;
+  const recognizedEl = document.getElementById('shadowRecognizedText');
+  recognizedEl.textContent = spokenText ? spokenText : '( 인식 안 됨 )';
+
+  const norm = normalizePronounceText(spokenText);
+  const isCorrect = norm.length > 0 && norm.includes(target.jp);
+  const feedbackEl = document.getElementById('shadowFeedback');
+
+  if(isCorrect){
+    shadowCorrectScore += 1;
+    document.getElementById('shadowCorrectScore').textContent = shadowCorrectScore;
+    if(typeof playCorrectSound === 'function') playCorrectSound();
+    recordWordResult(target, true);
+    feedbackEl.style.color = 'var(--correct)';
+    feedbackEl.textContent = `🎉 잘 따라했어요! ${target.jp} (${target.kr})${extraNote}`;
+    document.getElementById('shadowStatusLabel').textContent = '정답이에요!';
+  } else {
+    shadowWrongScore += 1;
+    document.getElementById('shadowWrongScore').textContent = shadowWrongScore;
+    if(typeof playWrongSound === 'function') playWrongSound();
+    recordWordResult(target, false);
+    feedbackEl.style.color = wrongFeedbackColor();
+    feedbackEl.textContent = wrongFeedbackText(`아쉬워요! 정답은 ${target.jp} (${target.kr})이었어요${extraNote}`);
+    document.getElementById('shadowStatusLabel').textContent = isGentleFeedbackMode() ? '괜찮아요, 다음 문제로!' : '아쉬워요!';
+  }
+
+  shadowAdvanceTimer = setTimeout(() => {
+    shadowIndex += 1;
+    showShadowingQuestion();
+  }, isCorrect ? 1200 : 1600);
+}
+
+function shadowShowResult(){
+  showDrillScreen('shadow', 'result');
+  document.getElementById('shadowResultCorrect').textContent = shadowCorrectScore;
+  document.getElementById('shadowResultWrong').textContent = shadowWrongScore;
+}
+
+/* 게임을 벗어나거나 문제가 바뀔 때 마이크와 관련 타이머를 모두 정리합니다 */
+function stopShadowListening(){
+  shadowListening = false;
+  clearTimeout(shadowAttemptTimer);
+  stopShadowPitchSampling(); // 🎙️ §14 — 게임 이탈/문제 전환 시 피치 샘플링용 마이크도 함께 정리
+  const recognizedEl = document.getElementById('shadowRecognizedText');
+  if(recognizedEl) recognizedEl.classList.remove('listening', 'preparing');
+  if(shadowRecognition){
+    try{
+      shadowRecognition.onresult = null;
+      shadowRecognition.onerror = null;
+      shadowRecognition.onend = null;
+      shadowRecognition.stop();
+    }catch(e){}
+  }
+}
+
 /* 🌅 하루 일과 씬(scene) 모드 로직
    실제 아기가 배우는 방식처럼, 단어를 낱개로 퀴즈 풀게 하지 않고
    상황(기상/식사/목욕/놀이/취침) 속에서 부모가 하는 말을 반복해서 들려줍니다. */
@@ -9339,9 +10302,14 @@ let exposurePlayCount = 0;
 const EXPOSURE_REQUIRED_PLAYS = 3;
 
 function generateExposureQuestion(){
+  // 🧠 어휘 축 SRS/망각곡선 — 순수 랜덤 대신 wordSrsWeightedPick()으로 교체. A단계(최초 노출)
+  // 게임이지만, 아직 한 번도 안 만난 단어는 srsForgetProbability가 망각확률 1(최댓값)을
+  // 반환해 자연히 최우선으로 뽑히므로 "새 단어부터" 원칙은 그대로 유지되고, 덤으로 이미
+  // 배웠지만 오래돼 잊어가는 단어도 함께 다시 노출시켜주는 효과가 생김.
+  // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 직전 단어와 같은 혼동군은 이번 후보에서 미리 제외.
   const activeWords = getActiveWords();
-  const randomIndex = Math.floor(Math.random() * activeWords.length);
-  currentExposureWord = activeWords[randomIndex];
+  const prevExposureJp = currentExposureWord ? currentExposureWord.jp : null;
+  currentExposureWord = wordSrsWeightedPick(excludeVocabConfusionGroup(activeWords, prevExposureJp), 1)[0];
   exposurePlayCount = 0;
 
   const emojiEl = document.getElementById('exposureEmoji');
@@ -10837,6 +11805,302 @@ function restartAdjectiveSet(){
   showAdjIntro();
 }
 
+/* 🎭 미니 롤플레이(상황극) 로직 — learning-theory-roadmap.md Part 2 §4-1 프로토타입.
+   기존 게임들과 달리 "정답/오답 채점"이 아니라 "미션(성공 노드 도달)까지 몇 번
+   시도했는가"로 평가함. 오답 선택은 게임을 끝내지 않고 NPC가 완곡하게 되묻는
+   retryPool 대사로 이어짐(⑤ 낮은 정의적 여과 — 틀려도 대화가 계속됨).
+   선택지는 버튼 탭과 음성 발화 둘 다로 고를 수 있음(아래 RoleplayRecognitionAPI 참고).
+   ⚠️ 범위 제한: 진행 상태는 세션 한정(새로고침하면 초기화)이라 SRS/장기기억 통계와는
+   연동하지 않음 — GAME_STAGE_MAP에는 D단계로만 등록해 "오늘의 추천"의 발화·전이
+   후보 판단에는 잡히게 하되, 개별 노드 판정까지 그 통계 시스템에 엮진 않음
+   (완료 기록은 roleplayCompletions로 별도 저장 — 로드맵에도 "다음 세션 후보"로 명시). */
+let roleplayScenario = null;   // 현재 진행 중인 시나리오 객체(ROLEPLAY_SCENARIOS 중 하나)
+let roleplayNodeId = null;     // 현재 위치한 node id
+let roleplayAttempts = 0;      // 이번 시나리오에서 retryPool로 빠진 횟수(적을수록 매끄러운 대화)
+
+/* 🎤 발화(음성) 응답 지원 — learning-theory-roadmap.md Part 2 §4-1 "다음 세션 후보" 중
+   "발화 응답 지원 추가"의 구현. 선택지 버튼을 누르는 대신 실제로 그 문장을 소리 내어
+   말해도 같은 선택으로 인식됨(⑧ 발화·전이를 더 진짜에 가깝게). 기존 히라가나 읽기
+   게임(HrRecognitionAPI)과 동일한 Web Speech API를 그대로 재사용 — 별도 이름
+   (RoleplayRecognitionAPI)만 붙여 다른 게임의 recognition 인스턴스와 섞이지 않게 함.
+   버튼 선택은 항상 함께 남겨둠(음성 인식 정확도가 낮은 브라우저/환경에서도 진행 가능) */
+const RoleplayRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+let roleplayRecognition = null;
+let roleplayListening = false;
+
+/* 공백(반각/전각)과 문장부호를 제거해 비교하기 쉽게 정규화 — 인식된 발화와
+   choice.jp 문장을 같은 기준으로 비교하기 위한 헬퍼 */
+function normalizeRoleplayJp(text){
+  return (text || '').replace(/[\s\u3000。、！？.,!?]/g, '');
+}
+
+/* 🎭 시나리오별 완료 기록 — 시나리오 목록 화면에서 "이미 몇 번 해봤는지·최고 기록"을
+   보여주기 위한 최소한의 진행 상황 저장소. §3 오케스트레이터와는 아직 연동하지 않고
+   (다음 세션 후보로 남겨둠) 이 게임 화면 안에서만 참고용으로 씀. */
+const ROLEPLAY_COMPLETIONS_KEY = 'kotobaRoleplayCompletions';
+let roleplayCompletions = {}; // { [scenarioId]: { timesCompleted, bestAttempts } }
+
+function loadRoleplayCompletions() {
+  try {
+    const raw = localStorage.getItem(ROLEPLAY_COMPLETIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    roleplayCompletions = (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (e) {
+    roleplayCompletions = {};
+  }
+  return roleplayCompletions;
+}
+
+function saveRoleplayCompletions() {
+  try {
+    localStorage.setItem(ROLEPLAY_COMPLETIONS_KEY, JSON.stringify(roleplayCompletions));
+  } catch (e) { /* 저장 실패해도 게임 진행에는 지장 없도록 조용히 무시 */ }
+}
+
+/* 미션을 완료했을 때(showRoleplayResult 진입 시) 호출 — 완료 횟수를 올리고,
+   이번 시도 횟수가 이제까지의 최고 기록(가장 적은 되묻기 횟수)보다 좋으면 갱신 */
+function recordRoleplayCompletion(scenarioId, attempts) {
+  const prev = roleplayCompletions[scenarioId];
+  const timesCompleted = (prev ? prev.timesCompleted : 0) + 1;
+  const bestAttempts = (typeof prev?.bestAttempts === 'number') ? Math.min(prev.bestAttempts, attempts) : attempts;
+  roleplayCompletions[scenarioId] = { timesCompleted, bestAttempts };
+  saveRoleplayCompletions();
+}
+
+/* 배열에서 무작위로 하나 골라 반환 — linePool/retryPool 공용 헬퍼(부호화 다양성) */
+function pickRoleplayLine(pool){
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/* roleplay 모드 진입 시 항상 시나리오 선택 화면부터 시작 */
+function initRoleplayGame(){
+  roleplayScenario = null;
+  roleplayNodeId = null;
+  loadRoleplayCompletions();
+  renderRoleplayScenarioList();
+  showRoleplayScreen('list');
+}
+
+/* roleplay 모드 안의 3개 화면(목록/대화/결과) 중 하나만 보이도록 전환 */
+function showRoleplayScreen(which){
+  const screens = { list: 'roleplayListScreen', dialogue: 'roleplayDialogueScreen', result: 'roleplayResultScreen' };
+  Object.keys(screens).forEach(key => {
+    const el = document.getElementById(screens[key]);
+    if(el) el.style.display = (key === which) ? '' : 'none';
+  });
+}
+
+/* 시나리오 선택 화면의 카드 목록을 그림. 이전에 완료한 기록이 있으면 배지로 함께 보여줌 */
+function renderRoleplayScenarioList(){
+  const grid = document.getElementById('roleplayScenarioGrid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  ROLEPLAY_SCENARIOS.forEach(sc => {
+    const record = roleplayCompletions[sc.id];
+    const badgeHtml = record
+      ? `<div class="roleplay-scenario-badge">✅ ${record.timesCompleted}번 완료 · 최고 기록 ${record.bestAttempts}번 되묻기</div>`
+      : '';
+    const card = document.createElement('div');
+    card.className = 'roleplay-scenario-card';
+    card.innerHTML = `
+      <div class="roleplay-scenario-emoji">${sc.emoji}</div>
+      <div class="roleplay-scenario-title">${sc.title}</div>
+      <div class="roleplay-scenario-intro">${sc.intro}</div>
+      ${badgeHtml}
+    `;
+    card.addEventListener('click', () => startRoleplayScenario(sc.id));
+    grid.appendChild(card);
+  });
+}
+
+/* 시나리오 하나를 골라 시작 노드부터 대화를 시작 */
+function startRoleplayScenario(scenarioId){
+  const sc = ROLEPLAY_SCENARIOS.find(s => s.id === scenarioId);
+  if(!sc) return;
+  roleplayScenario = sc;
+  roleplayNodeId = sc.startNode;
+  roleplayAttempts = 0;
+  showRoleplayScreen('dialogue');
+  renderRoleplayNode();
+}
+
+/* 지금 위치한 노드를 화면에 그림: NPC 대사(linePool 또는 retryPool 중 무작위 선택,
+   재생 버튼으로 다시 들을 수 있음) + 선택지 버튼들. choices가 비어있으면(=success 노드)
+   결과 화면으로 넘어감 */
+function renderRoleplayNode(){
+  if(!roleplayScenario || !roleplayNodeId) return;
+  const node = roleplayScenario.nodes[roleplayNodeId];
+  if(!node) return;
+
+  if(node.choices.length === 0){
+    const line = pickRoleplayLine(node.linePool);
+    speakTTS(line.jp, { rate: roleplayScenario.npc.voice.rate, pitch: roleplayScenario.npc.voice.pitch });
+    showRoleplayResult(line);
+    return;
+  }
+
+  const pool = node.retryPool || node.linePool;
+  const line = pickRoleplayLine(pool);
+  document.getElementById('roleplayNpcEmoji').textContent = roleplayScenario.npc.emoji;
+  document.getElementById('roleplayNpcName').textContent = roleplayScenario.npc.name;
+  const lineEl = document.getElementById('roleplayNpcLine');
+  lineEl.textContent = line.jp;
+  document.getElementById('roleplayNpcLineKr').textContent = line.kr;
+  document.getElementById('roleplayAttemptCount').textContent = roleplayAttempts;
+
+  stopRoleplayListening();
+  const micBtn = document.getElementById('roleplayMicBtn');
+  if(micBtn) micBtn.style.display = RoleplayRecognitionAPI ? '' : 'none';
+  const micStatus = document.getElementById('roleplayMicStatus');
+  if(micStatus) micStatus.textContent = '';
+
+  speakTTS(line.jp, { rate: roleplayScenario.npc.voice.rate, pitch: roleplayScenario.npc.voice.pitch });
+
+  const choiceBox = document.getElementById('roleplayChoiceBox');
+  choiceBox.innerHTML = '';
+  node.choices.forEach((choice, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'roleplay-choice-btn';
+    btn.textContent = choice.label;
+    btn.addEventListener('click', () => chooseRoleplayOption(idx));
+    choiceBox.appendChild(btn);
+  });
+}
+
+/* 🎤 마이크 버튼을 눌렀을 때 — 지금 노드의 선택지 중 하나를 소리 내어 말하게 하고,
+   인식된 문장을 정규화해서 choice.jp와 비교함. 브라우저가 음성 인식을 지원하지 않으면
+   렌더링 시점에 버튼 자체를 숨기므로 이 함수는 지원 브라우저에서만 호출됨 */
+function startRoleplaySpeechAttempt(){
+  if(!RoleplayRecognitionAPI || !roleplayScenario) return;
+  stopRoleplayListening();
+
+  const micStatus = document.getElementById('roleplayMicStatus');
+  if(micStatus) micStatus.textContent = '🎙️ 듣는 중... 선택지 중 하나를 말해보세요';
+
+  roleplayRecognition = new RoleplayRecognitionAPI();
+  roleplayRecognition.lang = 'ja-JP';
+  roleplayRecognition.continuous = false;
+  roleplayRecognition.interimResults = false;
+  roleplayRecognition.maxAlternatives = 1;
+  roleplayListening = true;
+  let resultHandled = false;
+
+  roleplayRecognition.onresult = (event) => {
+    if(resultHandled) return;
+    let spoken = '';
+    for(let i = 0; i < event.results.length; i++){
+      spoken += event.results[i][0].transcript;
+    }
+    resultHandled = true;
+    try{ roleplayRecognition.stop(); }catch(e){}
+    handleRoleplaySpeechResult(spoken);
+  };
+  roleplayRecognition.onerror = () => {
+    if(resultHandled) return;
+    resultHandled = true;
+    handleRoleplaySpeechResult('');
+  };
+  roleplayRecognition.onend = () => { roleplayListening = false; };
+
+  try{ roleplayRecognition.start(); }catch(e){}
+}
+
+/* 인식된 발화를 지금 노드의 choices와 비교해 가장 가까운 선택지를 찾아 그대로
+   chooseRoleplayOption()으로 넘김. 못 알아들었거나 어느 선택지와도 안 겹치면
+   버튼으로 골라도 된다는 안내만 띄우고 게임은 그대로 유지(⑤ 낮은 정의적 여과) */
+function handleRoleplaySpeechResult(spoken){
+  const micStatus = document.getElementById('roleplayMicStatus');
+  const node = roleplayScenario && roleplayScenario.nodes[roleplayNodeId];
+  if(!node) return;
+
+  const normSpoken = normalizeRoleplayJp(spoken);
+  if(!normSpoken){
+    if(micStatus) micStatus.textContent = '잘 못 들었어요 — 다시 말하거나 버튼으로 골라도 돼요';
+    return;
+  }
+
+  let matchedIdx = -1;
+  node.choices.forEach((choice, idx) => {
+    if(matchedIdx !== -1) return;
+    const normChoice = normalizeRoleplayJp(choice.jp);
+    if(normChoice && (normSpoken.includes(normChoice) || normChoice.includes(normSpoken))) matchedIdx = idx;
+  });
+
+  if(matchedIdx === -1){
+    if(micStatus) micStatus.textContent = `"${spoken}"(이)라고 들었어요 — 다시 말하거나 버튼으로 골라도 돼요`;
+    return;
+  }
+
+  if(micStatus) micStatus.textContent = '';
+  chooseRoleplayOption(matchedIdx);
+}
+
+/* 진행 중이던 마이크 인식을 정리 — 노드 전환/화면 이탈/게임 종료 시 항상 호출해야
+   이전 노드용 recognition 인스턴스가 다음 노드의 결과 처리에 잘못 끼어들지 않음 */
+function stopRoleplayListening(){
+  roleplayListening = false;
+  if(roleplayRecognition){
+    try{
+      roleplayRecognition.onresult = null;
+      roleplayRecognition.onerror = null;
+      roleplayRecognition.onend = null;
+      roleplayRecognition.stop();
+    }catch(e){}
+  }
+}
+
+/* 선택지를 골랐을 때: 다음 노드로 이동. 그 노드가 retryPool을 가진 "막다른" 분기라면
+   시도 횟수만 올리고 계속 진행(미션 실패로 끝내지 않음) */
+function chooseRoleplayOption(idx){
+  const node = roleplayScenario.nodes[roleplayNodeId];
+  const choice = node.choices[idx];
+  if(!choice) return;
+  stopRoleplayListening();
+
+  const nextNode = roleplayScenario.nodes[choice.next];
+  if(nextNode && nextNode.retryPool && !choice.success){
+    roleplayAttempts++;
+  }
+  roleplayNodeId = choice.next;
+  renderRoleplayNode();
+}
+
+/* 다시 들려주기 버튼 — 지금 화면에 표시된 NPC 대사를 그대로 다시 재생 */
+function replayRoleplayLine(){
+  if(!roleplayScenario) return;
+  const lineEl = document.getElementById('roleplayNpcLine');
+  if(!lineEl || !lineEl.textContent) return;
+  speakTTS(lineEl.textContent, { rate: roleplayScenario.npc.voice.rate, pitch: roleplayScenario.npc.voice.pitch });
+}
+
+/* 미션 완료(success 노드 도달) 결과 화면 표시 */
+function showRoleplayResult(finalLine){
+  recordRoleplayCompletion(roleplayScenario.id, roleplayAttempts);
+  showRoleplayScreen('result');
+  document.getElementById('roleplayResultEmoji').textContent = roleplayScenario.emoji;
+  document.getElementById('roleplayResultLine').textContent = finalLine.jp;
+  document.getElementById('roleplayResultLineKr').textContent = finalLine.kr;
+  const attemptMsg = roleplayAttempts === 0
+    ? '한 번에 술술 미션을 완료했어요!'
+    : `다시 말해달라는 요청을 ${roleplayAttempts}번 받았지만, 결국 미션을 완료했어요!`;
+  document.getElementById('roleplayResultDesc').textContent = attemptMsg;
+}
+
+/* 결과 화면에서 같은 시나리오 다시 하기 */
+function retryRoleplayScenario(){
+  if(!roleplayScenario) return;
+  startRoleplayScenario(roleplayScenario.id);
+}
+
+/* 결과 화면/대화 화면에서 시나리오 목록으로 돌아가기 */
+function backToRoleplayList(){
+  stopRoleplayListening();
+  roleplayScenario = null;
+  roleplayNodeId = null;
+  renderRoleplayScenarioList();
+  showRoleplayScreen('list');
+}
+
 
 
 let currentMenuCategoryId = null;
@@ -10930,12 +12194,19 @@ function formatGameModalityLabel(modality) {
    🧭 §3 오케스트레이터 Phase 1(규칙 기반) — learning-theory-roadmap.md Part 2 §3.
    "오늘 이 학습자에게 어떤 게임을 추천할까"를 계산하는 최초 버전.
 
-   범위: Part 2 §2에서 미뤄뒀던 "항목별 단계 이동 규칙"을 전체 30여 개 게임 모드로
-   한 번에 일반화하지 않고, 이미 3채널(재인·회상·발화) SRS 통계가 갖춰진
-   히라가나 학습 축에만 우선 적용함(회귀 리스크가 가장 낮고, §1 진단 4개 필드를
-   실제로 연결해보는 목적에는 이 정도 범위로도 충분). 다른 게임 카테고리(단어 퀴즈,
-   문장 조합 등)로 넓히는 것은 별도 세션의 다음 과제로 남겨둠.
-   ============================================================ */
+   범위: 처음 구현할 때는 Part 2 §2에서 미뤄뒀던 "항목별 단계 이동 규칙"을 전체 30여 개
+   게임 모드로 한 번에 일반화하지 않고, 이미 3채널(재인·회상·발화) SRS 통계가 갖춰진
+   히라가나 학습 축에만 우선 적용했음(회귀 리스크가 가장 낮고, §1 진단 4개 필드를
+   실제로 연결해보는 목적에는 그 정도 범위로도 충분했음).
+
+   🆕 이번 세션(다음 세션 후보 항목 처리): §2(a)에서 이미 만들어둔 어휘 축 A~E 분포
+   (computeWordGameStage/computeVocabStageDistribution)를 실제로 이 추천 로직에 연결함.
+   computeCombinedStageDistribution()이 히라가나 축과 어휘 축 분포를 합산해 "오늘 가장
+   부족한 단계"를 정하고, 그 단계에서 두 축 중 목표 대비 더 크게 뒤처진 쪽을 골라
+   히라가나 게임(STAGE_TO_HIRAGANA_MODE) 또는 단어 게임(STAGE_TO_WORD_MODE)을 추천함.
+   단, 어휘 축은 아직 SRS stage/망각곡선이 없어(§6(a) 1차 구현 범위 그대로) "얼마나
+   부족한가"를 히라가나만큼 정교하게 재지 못하는 근사치라는 한계는 남아 있음 — 이건
+   별도 과제(어휘 축 SRS 도입)로 로드맵에 남겨둠. */
 
 /* 히라가나 한 글자가 지금 A~E 중 어느 단계에 있는지 판정.
    - 세 채널(hsStats 재인/hwStats 회상/hrStats 발화) 중 아무것도 시도한 적 없으면 'A'
@@ -10964,6 +12235,19 @@ function computeActiveSetStageDistribution() {
   return { dist, total: chars.length };
 }
 
+/* 히라가나 축(computeActiveSetStageDistribution)과 어휘 축(computeVocabStageDistribution)
+   분포를 합산 — §3 오케스트레이터가 "오늘 전체적으로 어느 단계가 가장 부족한가"를
+   두 축을 함께 보고 판단할 수 있게 해주는 결합 함수. 개별 축 결과(hira/vocab)도 함께
+   반환해, 합산 후 worstStage가 정해지면 그 단계에서 어느 축이 더 뒤처졌는지 다시
+   비교할 수 있게 함(pickNextGameForSession 참고). */
+function computeCombinedStageDistribution() {
+  const hira = computeActiveSetStageDistribution();
+  const vocab = computeVocabStageDistribution();
+  const dist = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  ['A', 'B', 'C', 'D', 'E'].forEach(stage => { dist[stage] = hira.dist[stage] + vocab.dist[stage]; });
+  return { dist, total: hira.total + vocab.total, hira, vocab };
+}
+
 /* 진단 프로필(§1의 4개 필드)로 학습자 성향을 3분류.
    - phonoDiscrimination(청지각 변별력)이 낮거나, assocLearningRate가 'slow'이거나,
      workingMemorySpan(작업기억 스팬)이 낮으면 → 'cautious'(신중한 학습자, A단계 비중↑)
@@ -10985,21 +12269,55 @@ function classifyLearnerTendency(profile) {
   return 'normal';
 }
 
+/* 🔀 어휘 축에서 이 단계(B/C/D)에 추천할 게임을 후보 목록(WORD_AXIS_STAGE_CANDIDATES) 중에서
+   고름 — learning-theory-roadmap.md Part 4 §2(인출 단서 다변화)가 어휘 축 오케스트레이터가
+   생기면 처리하기로 미뤄뒀던 "직전과 다른 모달리티 우선 선택" 가중치의 실제 구현.
+   - 이 단계에 후보가 등록돼 있지 않으면(A/E) STAGE_TO_WORD_MODE의 기본값으로 대체.
+   - 직전 기록이 없으면(첫 방문 등) 후보 목록의 첫 번째(=canonical 대표 게임)를 그대로 추천.
+   - 직전 기록이 있으면, present(제시 모달리티)가 다른 후보를 최우선으로 찾고, 그런 후보가
+     없으면(전부 present가 같음) response(응답 모달리티)라도 다른 후보를 찾음. 그래도 없으면
+     (모든 후보가 직전과 완전히 같은 모달리티) 첫 번째 후보로 대체함. */
+function pickWordAxisMode(stage) {
+  const candidates = WORD_AXIS_STAGE_CANDIDATES[stage];
+  if (!candidates || candidates.length === 0) return STAGE_TO_WORD_MODE[stage];
+
+  const last = loadLastVocabModality();
+  if (!last) return candidates[0];
+
+  const differentPresent = candidates.find(mode => {
+    const m = getGameModality(mode);
+    return m && m.present !== last.present;
+  });
+  if (differentPresent) return differentPresent;
+
+  const differentResponse = candidates.find(mode => {
+    const m = getGameModality(mode);
+    return m && m.response !== last.response;
+  });
+  if (differentResponse) return differentResponse;
+
+  return candidates[0];
+}
+
 /* 오늘 세션에 어떤 게임을 추천할지 정하는 Phase 1 규칙 기반 함수.
    1) 진단 프로필로 목표 단계 비율(LEARNER_STAGE_RATIO)을 정하고
-   2) 활성 세트 글자들의 실제 현재 단계 분포를 구한 뒤
-   3) 목표 대비 가장 부족한(비중이 낮은) 단계 하나를 골라 그 단계에 맞는 게임을 추천함.
-   E단계가 가장 부족하면 특정 게임 대신 기존 복습 세트(startReviewSession)를 추천함. */
+   2) 히라가나 축 + 어휘 축을 합친 실제 현재 단계 분포를 구한 뒤
+   3) 목표 대비 가장 부족한(비중이 낮은) 단계 하나를 고르고,
+   4) 그 단계에서 두 축(히라가나/어휘) 중 목표 대비 더 크게 뒤처진 쪽을 골라
+      해당 축의 대표 게임을 추천함 — 어휘 축이면 pickWordAxisMode()로 모달리티 로테이션까지 반영.
+   E단계가 가장 부족하면 특정 게임 대신 복습 세트를 추천함 — 히라가나/어휘 두 축 중
+   목표 대비 더 뒤처진 쪽으로 안내하고(어휘 축은 startVocabReviewSession, 그 외엔 기존
+   startReviewSession), 어휘 쪽에 복습할 단어 후보가 없으면 히라가나 복습 세트로 대체함. */
 function pickNextGameForSession() {
   const profile = loadLearnerProfile();
   const tendency = classifyLearnerTendency(profile);
   const targetRatio = LEARNER_STAGE_RATIO[tendency];
 
-  const { dist, total } = computeActiveSetStageDistribution();
+  const { dist, total, hira, vocab } = computeCombinedStageDistribution();
   if (total === 0) {
     return {
-      stage: 'A', mode: 'exposure', tendency,
-      reason: '아직 활성화된 글자가 없어요 — 가볍게 듣기부터 시작해봐요',
+      stage: 'A', mode: 'exposure', tendency, axis: null,
+      reason: '아직 활성화된 글자나 만난 단어가 없어요 — 가볍게 듣기부터 시작해봐요',
       modalityText: formatGameModalityLabel(getGameModality('exposure'))
     };
   }
@@ -11015,19 +12333,42 @@ function pickNextGameForSession() {
   const stageLabel = GAME_STAGE_INFO[worstStage] ? GAME_STAGE_INFO[worstStage].label : worstStage;
 
   if (worstStage === 'E') {
+    // 🆕 어휘 전용 복습 세트(startVocabReviewSession)가 생기면서, E단계가 가장 부족할 때도
+    // 무조건 히라가나 복습 세트로 보내지 않고 두 축 중 더 뒤처진 쪽으로 안내함. 단, 어휘 축을
+    // 고르려면 실제로 복습할 단어 후보가 있어야 함(getVocabReviewCandidateWords 참고) —
+    // 후보가 없으면 히라가나 복습 세트로 대체.
+    const hiraRatioE = hira.total > 0 ? hira.dist.E / hira.total : null;
+    const vocabRatioE = vocab.total > 0 ? vocab.dist.E / vocab.total : null;
+    const hiraGapE = hiraRatioE === null ? -Infinity : targetRatio.E - hiraRatioE;
+    const vocabGapE = vocabRatioE === null ? -Infinity : targetRatio.E - vocabRatioE;
+    const useVocabReview = vocabGapE > hiraGapE && getVocabReviewCandidateWords().length > 0;
+
     return {
-      stage: 'E', mode: null, useReviewSession: true, tendency,
-      reason: `이미 잘 아는 글자들을 새 맥락에서 다시 만나 "${stageLabel}"할 시간이에요`,
-      // 복습 세트 자체가 카드찾기·쓰기·읽기 3가지 모달리티를 매번 랜덤 순서로 섞어 진행하므로
+      stage: 'E', mode: null,
+      useReviewSession: !useVocabReview,
+      useVocabReviewSession: useVocabReview,
+      tendency, axis: useVocabReview ? 'vocab' : 'hiragana',
+      reason: `이미 잘 아는 글자·단어들을 새 맥락에서 다시 만나 "${stageLabel}"할 시간이에요`,
+      // 복습 세트 자체가 여러 모달리티를 매번 랜덤 순서로 섞어 진행하므로
       // 고정된 모달리티 하나를 안내하는 대신 "여러 방식" 문구로 대체함(Part 4 §2)
       modalityText: '🔁 여러 방식으로 번갈아 만나기'
     };
   }
 
-  const recommendedMode = STAGE_TO_HIRAGANA_MODE[worstStage];
+  // 🆕 이 단계에서 히라가나 축과 어휘 축 중 어느 쪽이 목표 비율 대비 더 뒤처졌는지 비교.
+  // 해당 축에 아직 데이터가 없으면(활성 세트 없음/만난 단어 없음) 그 축은 후보에서 제외(-Infinity).
+  const hiraRatio = hira.total > 0 ? hira.dist[worstStage] / hira.total : null;
+  const vocabRatio = vocab.total > 0 ? vocab.dist[worstStage] / vocab.total : null;
+  const hiraGap = hiraRatio === null ? -Infinity : targetRatio[worstStage] - hiraRatio;
+  const vocabGap = vocabRatio === null ? -Infinity : targetRatio[worstStage] - vocabRatio;
+
+  const axis = vocabGap > hiraGap ? 'vocab' : 'hiragana';
+  const recommendedMode = axis === 'vocab' ? pickWordAxisMode(worstStage) : STAGE_TO_HIRAGANA_MODE[worstStage];
+  const axisLabel = axis === 'vocab' ? '단어' : '히라가나 글자';
+
   return {
-    stage: worstStage, mode: recommendedMode, tendency,
-    reason: `지금 배우는 글자 중 "${stageLabel}" 단계 비중이 목표보다 낮아요`,
+    stage: worstStage, mode: recommendedMode, tendency, axis,
+    reason: `지금 배우는 ${axisLabel} 중 "${stageLabel}" 단계 비중이 목표보다 낮아요`,
     modalityText: formatGameModalityLabel(getGameModality(recommendedMode))
   };
 }
@@ -11071,6 +12412,10 @@ function renderTodayRecommendation() {
 
 function startRecommendedGame() {
   if (!lastSessionRecommendation) return;
+  if (lastSessionRecommendation.useVocabReviewSession) {
+    startVocabReviewSession();
+    return;
+  }
   if (lastSessionRecommendation.useReviewSession) {
     startReviewSession();
     return;
@@ -11187,6 +12532,7 @@ function launchGame(mode){
    글자별 통계와 "게임 시작하기" 버튼이 있는 시작 화면으로 돌아갑니다 */
 function backToCategoryFromGame(){
   if (reviewSessionActive) cancelReviewSession();
+  if (wordReviewSessionActive) cancelVocabReviewSession();
 
   const hiraganaSpeedModeEl = document.getElementById('hiraganaSpeedMode');
   const hsResultScreenEl = document.getElementById('hsResultScreen');
@@ -11224,6 +12570,7 @@ function exitGameFullscreen(){
   stopKaraokePlayback();
   stopEbookAudio();
   stopWordSearchDrag();
+  stopRoleplayListening();
   clearTimeout(riddleAdvanceTimer);
   clearTimeout(riddleHintTimer);
   qaGame.cancelAdvance();
@@ -11253,6 +12600,7 @@ document.addEventListener('fullscreenchange', () => {
 /* 페이지 로드 시 연령대 라벨/버튼 상태를 실제 데이터와 동기화 */
 (function initAppLevelUI(){
   loadWordStats(); // 🪜 §2 단계 판정 일반화 — 히라가나 밖 단어 통계도 이제 localStorage에서 불러옴
+  applyActiveStreakTheme(); // 🏅 스트릭 배지로 해금한 테마가 있으면 페이지 로드 시 바로 적용
   const countEl = document.getElementById('ageLevelCount');
   if(countEl) countEl.innerHTML = `현재 <b>${getActiveWords().length}</b>개 단어 사용 중`;
   updateMatchGridAvailability();

@@ -2072,6 +2072,17 @@ const COMPOUNDS = [
   { p1:{jp:"しろ",kr:"하양",emoji:"⚪"}, p2:{jp:"くま",kr:"곰",emoji:"🐻"}, jp:"しろくま", romaji:"shirokuma", kr:"북극곰", emoji:"🐻‍❄️", level:36 }
 ];
 
+/* 🏅 스트릭 배지·테마 해금(로드맵 15번 섹션) — 연속 학습일수 목표(days)에 도달하면 배지를
+   얻습니다. theme이 null이면 장식용 배지, 문자열이면 그 배지를 얻은 뒤 `.theme-<값>`을
+   선택해 쓸 수 있게 해줍니다(index.html의 body.theme-* CSS 변수 오버라이드와 짝을 이룸).
+   한 번 얻은 배지는 스트릭이 끊겨도 사라지지 않습니다(연속 기록이 아니라 "누적 도달"만 기억). */
+const STREAK_BADGES = [
+  { days: 3, emoji: '🌱', label: '새싹', theme: null },
+  { days: 7, emoji: '🌸', label: '벚꽃', theme: 'sakura' },
+  { days: 14, emoji: '🌊', label: '파도', theme: 'ocean' },
+  { days: 30, emoji: '🌙', label: '보름달', theme: 'night' }
+];
+
 const CONFETTI_COLORS = ['var(--hanko)', 'var(--gold)', 'var(--indigo)', 'var(--sage)', '#ffffff'];
 
 const CONFETTI_EMOJIS = ['🌸', '✨'];
@@ -2417,6 +2428,26 @@ const HIRAGANA_CONFUSION_GROUPS = [
   ['ま', 'も'],
   ['す', 'む'],
   ['し', 'つ']
+];
+
+/* 🔀 분산 학습 · 간섭 방지 — learning-theory-roadmap.md §17(어휘 축 확장).
+   HIRAGANA_CONFUSION_GROUPS와 같은 목적이지만 단어(jp) 기준. 발음 패턴이 닮았거나
+   (같은 음절 반복형 아기말, 각운) 의미가 대비/짝을 이뤄 헷갈리기 쉬운 단어끼리 묶었음.
+   자형이 아니라 "소리·의미"가 닮은 것이 기준이라 히라가나 묶음과는 선정 근거가 다름.
+   언어학적으로 확정된 표준 목록이 아니라 실제 아동 단어학습에서 흔히 헷갈리는 사례를
+   손으로 큐레이션한 시작점 — logic.js의 spaceOutVocabConfusionGroups/
+   isSameVocabConfusionGroup에서 참고함. */
+const VOCAB_CONFUSION_GROUPS = [
+  ['まま', 'ぱぱ', 'ばあば', 'じいじ'],       // 반복형 아기말 호칭(mama/papa/baba/jiji)
+  ['おにいちゃん', 'おねえちゃん'],            // 한 모라 차이(nii/nee)로 헷갈리는 남매 호칭
+  ['おとうと', 'いもうと'],                    // 한 글자 차이(오토우토/이모우토)의 남동생/여동생
+  ['おとこのこ', 'おんなのこ'],                // 대비를 이루는 남자아이/여자아이
+  ['しろ', 'くろ'],                            // 각운(-ろ)이 같아 헷갈리는 하양/검정
+  ['きゅう', 'じゅう'],                        // 각운(-ゅう)이 같은 9/10
+  ['どうぞ', 'ちょうだい'],                    // 주다/받다 반대 의미라 헷갈리기 쉬운 인사말
+  ['わんわん', 'にゃんにゃん'],                // 같은 형식(같은 음절 반복)의 강아지/고양이 의성어
+  ['まんま', 'ねんね'],                        // 각운(-んま/-んね)이 비슷한 아기말(밥/잠)
+  ['はい', 'いや']                             // 대비를 이루는 긍정/부정 응답
 ];
 
 const SONGS = [
@@ -2972,6 +3003,135 @@ const PAL_SYMBOL_SOUND_PAIRS = [
   { symbol: '★', name: 'ロズ' }
 ];
 
+/* 🎭 미니 롤플레이(상황극) — learning-theory-roadmap.md Part 2 §4-1.
+   "정답 맞히기"가 아니라 "미션 달성"이 목적인 목표지향 분기 대화 프로토타입.
+   각 시나리오는 node id를 key로 하는 그래프(nodes)로 구성됨.
+   - npc: {name, emoji, voice:{rate,pitch}} — NPC마다 목소리를 다르게 줘서 화자 다양성(④)을 흉내냄
+   - linePool: 이 노드에 도착할 때마다 무작위로 하나 골라 재생하는 NPC 대사 후보 —
+     같은 노드를 다시 만나도 매번 표현이 살짝 달라지게 해 "정답 문장 그대로 암기"를 완화함
+     (부호화 다양성 원리 재적용)
+   - choices: [{label(화면에 보이는 한국어 선택지), jp(그 선택지를 고르면 "말한 것으로 치는"
+     일본어 문장), next(다음 node id), success(true면 이 선택으로 미션 완료)}]
+   - retryPool: 미션에 도움이 안 되는 선택을 했을 때, "❌ 오답입니다" 대신 NPC가 자연스럽게
+     되묻는 대사 후보(⑧ 의미 협상 시뮬레이션 근사) — 이 경우 게임이 끝나지 않고 같은 노드에서
+     다시 선택할 기회를 줌(⑤ 낮은 정의적 여과 — 틀려도 안전하다는 경험)
+   1차 프로토타입 범위: 시나리오 2개, 선택형 응답만 지원(음성 응답 확장은 다음 세션 후보 —
+   인식 정확도 이슈로 우선 텍스트 선택으로 미션 판정을 검증한 뒤 확장하는 게 안전함). */
+const ROLEPLAY_SCENARIOS = [
+  {
+    id: 'restaurant', title: '식당에서 주문하기', emoji: '🍜',
+    intro: '식당에 들어왔어요. 점원이 인사를 건네요.',
+    npc: { name: '점원', emoji: '🧑‍🍳', voice: { rate: 0.82, pitch: 0.85 } },
+    startNode: 'greet',
+    nodes: {
+      greet: {
+        linePool: [
+          { jp: 'いらっしゃいませ！なにを　たべますか？', kr: '어서오세요! 뭘 드시겠어요?' },
+          { jp: 'こんにちは！ごちゅうもんは？', kr: '안녕하세요! 주문하시겠어요?' }
+        ],
+        choices: [
+          { label: '🍙 "오니기리 주세요"', jp: 'おにぎり　ください', next: 'confirmOnigiri' },
+          { label: '👋 "안녕히 가세요"', jp: 'さようなら', next: 'confused' }
+        ]
+      },
+      confused: {
+        retryPool: [
+          { jp: 'すみません、もういちど　いって　ください？', kr: '죄송해요, 다시 한 번 말해줄래요?' },
+          { jp: 'え？　なんですか？', kr: '네? 뭐라고 하셨죠?' }
+        ],
+        choices: [
+          { label: '🍙 "오니기리 주세요"', jp: 'おにぎり　ください', next: 'confirmOnigiri' },
+          { label: '💧 "물 주세요"', jp: 'おみず　ください', next: 'confirmWater' }
+        ]
+      },
+      confirmOnigiri: {
+        linePool: [ { jp: 'おにぎりですね！　かしこまりました！', kr: '오니기리요! 알겠습니다!' } ],
+        choices: [ { label: '🙏 "감사합니다"', jp: 'ありがとうございます', next: 'success', success: true } ]
+      },
+      confirmWater: {
+        linePool: [ { jp: 'おみずですね！　どうぞ！', kr: '물이요! 여기 있어요!' } ],
+        choices: [ { label: '🙏 "감사합니다"', jp: 'ありがとうございます', next: 'success', success: true } ]
+      },
+      success: {
+        linePool: [ { jp: 'どうぞ　めしあがれ！', kr: '맛있게 드세요!' } ],
+        choices: []
+      }
+    }
+  },
+  {
+    id: 'convenience', title: '편의점 계산대', emoji: '🏪',
+    intro: '과자를 들고 계산대 앞에 섰어요.',
+    npc: { name: '점원', emoji: '🧑‍💼', voice: { rate: 0.88, pitch: 1.08 } },
+    startNode: 'greet',
+    nodes: {
+      greet: {
+        linePool: [
+          { jp: 'これで　よろしいですか？', kr: '이걸로 괜찮으신가요?' },
+          { jp: 'ほかに　なにか　いりますか？', kr: '다른 거 더 필요하세요?' }
+        ],
+        choices: [
+          { label: '👍 "네, 이것만요"', jp: 'はい、これだけです', next: 'pay' },
+          { label: '🎒 "학교 가요"', jp: 'がっこうに　いきます', next: 'confused' }
+        ]
+      },
+      confused: {
+        retryPool: [
+          { jp: 'すみません、もういちど　おねがいします', kr: '죄송해요, 다시 한 번 부탁드려요' }
+        ],
+        choices: [ { label: '👍 "네, 이것만요"', jp: 'はい、これだけです', next: 'pay' } ]
+      },
+      pay: {
+        linePool: [ { jp: '100えんです', kr: '100엔입니다' } ],
+        choices: [ { label: '💴 "여기 있어요"', jp: 'はい、どうぞ', next: 'success', success: true } ]
+      },
+      success: {
+        linePool: [ { jp: 'ありがとうございました！', kr: '감사합니다!' } ],
+        choices: []
+      }
+    }
+  },
+  {
+    id: 'directions', title: '길 묻기', emoji: '🗺️',
+    intro: '역으로 가는 길을 잃어버렸어요. 지나가는 사람에게 물어봐요.',
+    npc: { name: '행인', emoji: '🚶', voice: { rate: 0.86, pitch: 0.95 } },
+    startNode: 'ask',
+    nodes: {
+      ask: {
+        linePool: [
+          { jp: 'こんにちは、どうしましたか？', kr: '안녕하세요, 무슨 일이세요?' },
+          { jp: 'なにか　さがしていますか？', kr: '뭔가 찾고 계세요?' }
+        ],
+        choices: [
+          { label: '🚉 "역은 어디예요?"', jp: 'えきは　どこですか？', next: 'pointDirection' },
+          { label: '🍨 "저는 아이스크림을 좋아해요"', jp: 'アイスが　すきです', next: 'confused' }
+        ]
+      },
+      confused: {
+        retryPool: [
+          { jp: 'すみません、なにが　ききたいですか？', kr: '죄송해요, 뭘 물어보고 싶으신 거예요?' },
+          { jp: 'もういちど　いって　ください', kr: '다시 한 번 말해줄래요?' }
+        ],
+        choices: [
+          { label: '🚉 "역은 어디예요?"', jp: 'えきは　どこですか？', next: 'pointDirection' }
+        ]
+      },
+      pointDirection: {
+        linePool: [
+          { jp: 'まっすぐ　いって　ください', kr: '똑바로 가세요' },
+          { jp: 'あそこを　みぎに　まがってください', kr: '저기서 오른쪽으로 도세요' }
+        ],
+        choices: [
+          { label: '🙏 "감사합니다"', jp: 'ありがとうございます', next: 'success', success: true }
+        ]
+      },
+      success: {
+        linePool: [ { jp: 'きを　つけて！', kr: '조심해서 가세요!' } ],
+        choices: []
+      }
+    }
+  }
+];
+
 const MENU_CATEGORIES = [
   {
     id: 'quiz-choice', title: '객관식 퀴즈', emoji: '❓',
@@ -3011,7 +3171,8 @@ const MENU_CATEGORIES = [
     desc: '직접 소리 내어 말하면 마이크가 인식해줘요',
     games: [
       {mode:'speech', title:'소리로 쓰기', emoji:'🎙️'},
-      {mode:'hiraganaRead', title:'히라가나 읽기', emoji:'🎤'}
+      {mode:'hiraganaRead', title:'히라가나 읽기', emoji:'🎤'},
+      {mode:'shadowing', title:'섀도잉 (듣고 곧바로 따라 말하기)', emoji:'🦜'}
     ]
   },
   {
@@ -3060,6 +3221,13 @@ const MENU_CATEGORIES = [
       {mode:'karaoke', title:'동요 가라오케', emoji:'🎤'},
       {mode:'songs', title:'손동작 노래', emoji:'🎶'}
     ]
+  },
+  {
+    id: 'roleplay', title: '미니 상황극', emoji: '🎭',
+    desc: '식당·편의점 같은 상황에서 대화로 목표를 이뤄봐요',
+    games: [
+      {mode:'roleplay', title:'미니 상황극 (목표 달성 대화)', emoji:'🎭'}
+    ]
   }
 ];
 
@@ -3097,7 +3265,10 @@ const GAME_STAGE_MAP = {
   writing: 'C', hiraganaWrite: 'C', trace: 'C', worksheet: 'C', dakuonTest: 'C',
 
   // D. 발화·전이 — 말하기(음성 인식) + 문장·단어 조합 + 탐색 퍼즐
-  speech: 'D', hiraganaRead: 'D', sentence: 'D', compound: 'D', wordsearch: 'D'
+  speech: 'D', hiraganaRead: 'D', shadowing: 'D', sentence: 'D', compound: 'D', wordsearch: 'D',
+  // 🎭 미니 롤플레이 — learning-theory-roadmap.md Part 2 §4-1. D단계(발화·전이)의 상위
+  // 확장판(목표지향 시뮬레이션)이라 같은 D로 분류함
+  roleplay: 'D'
 };
 
 /* 🧭 §3 오케스트레이터 Phase 1(규칙 기반) — learning-theory-roadmap.md Part 2 §3.
@@ -3123,8 +3294,41 @@ const STAGE_TO_HIRAGANA_MODE = {
   E: null
 };
 
+/* 어휘(단어) 축에서 각 단계(A~D)를 대표하는 게임 모드 — learning-theory-roadmap.md
+   Part 2 §3 "다음 세션 후보"(어휘 축을 오늘의 추천 배너에 연결)의 실제 구현.
+   히라가나와 달리 단어 전용 재인/회상/발화 3채널 게임이 따로 있는 게 아니라, 이미
+   GAME_STAGE_MAP에서 B/C/D로 분류해둔 "여러 단어를 다루는 일반 게임" 중 대표 하나씩을
+   골랐음(quiz/spelling/sentence는 특정 히라가나 글자가 아니라 단어 자체를 다루는 게임).
+   A단계는 히라가나와 동일하게 exposure(반복 노출 학습)를 그대로 재사용 — 이 게임 자체가
+   히라가나 전용이 아니라 단어 노출용이라 축 구분 없이 공유해도 자연스러움. E단계는
+   히라가나 축과 마찬가지로 특정 모드가 아니라 기존 복습 흐름으로 대체(아직 단어 전용
+   복습 세트가 없어 null로 둠 — pickNextGameForSession()이 이 경우 히라가나 복습 세트로
+   안내함). */
+const STAGE_TO_WORD_MODE = {
+  A: 'exposure',
+  B: 'quiz',
+  C: 'spelling',
+  D: 'sentence',
+  E: null
+};
+
+/* 🔀 어휘 축 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2에서
+   "실질적으로 여러 모드 중에서 골라야 하는 상황은 어휘 축 §3 오케스트레이터가 구현될 때
+   처음 발생하니 그때 GAME_MODALITY_MAP을 후보 게임 선정 가중치로 연결하라"고 남겨뒀던
+   과제의 실제 구현. 히라가나 축(STAGE_TO_HIRAGANA_MODE)은 단계당 게임이 1개뿐이라 로테이션할
+   여지가 없지만, 어휘 축은 같은 단계(B/C/D)에 GAME_STAGE_MAP상 후보 게임이 여러 개 있어
+   실제로 고를 수 있음. 여기서는 그중 "제시 모달리티"(present)가 서로 다른 대표 게임만
+   소수 선별했음(canonical 게임인 STAGE_TO_WORD_MODE 값을 항상 첫 번째로 포함해, 후보가
+   전부 직전 모달리티와 같을 때의 기본값이 되도록 함). kanjiCards처럼 다른 콘텐츠 축(한자)이거나
+   worksheet/trace/dakuonTest처럼 히라가나 전용 자산에 의존하는 게임은 후보에서 제외함. */
+const WORD_AXIS_STAGE_CANDIDATES = {
+  B: ['quiz', 'riddle', 'shop'],           // 소리로 고르기 / 글자로 고르기 / 그림으로 고르기
+  C: ['spelling', 'writing'],              // 소리 듣고 쓰기 / 글자 보고 쓰기
+  D: ['sentence', 'shadowing', 'wordsearch'] // 글자 보고 고르기 / 소리 듣고 말하기 / 그림 보고 고르기
+};
+
 /* 🔀 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2.
-   기존 GAME_STAGE_MAP(A~D 단계 매핑)과 같은 34개 게임 모드를, 이번엔 다른 축인
+   기존 GAME_STAGE_MAP(A~D 단계 매핑)과 같은 35개 게임 모드를, 이번엔 다른 축인
    "제시 모달리티"(present: 정보를 어떤 감각으로 주는지)와 "응답 모달리티"(response:
    아이가 어떤 방식으로 반응하는지) 두 필드로 재분류한 것. 같은 GAME_STAGE_MAP 객체에
    필드를 얹지 않고 별도 맵으로 분리한 이유: 기존 GAME_STAGE_MAP은 여러 곳에서
@@ -3177,9 +3381,12 @@ const GAME_MODALITY_MAP = {
   // D. 발화·전이 — 말하기 또는 조합·탐색형 선택 응답
   speech: { present: 'text', response: 'speak' },
   hiraganaRead: { present: 'text', response: 'speak' },
+  shadowing: { present: 'audio', response: 'speak' },
   sentence: { present: 'text', response: 'select' },
   compound: { present: 'text', response: 'select' },
-  wordsearch: { present: 'image', response: 'select' }
+  wordsearch: { present: 'image', response: 'select' },
+  // 🎭 미니 롤플레이 — NPC 대사는 소리로 듣고(present:audio), 응답은 선택형 대화지(response:select)
+  roleplay: { present: 'audio', response: 'select' }
 };
 
 /* 모달리티 값 → 아이 친화적 표시 문구. "오늘의 추천" 배너 등에서 조합해 사용

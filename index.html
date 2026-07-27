@@ -897,6 +897,14 @@
     color: #b7ab94;
     opacity: 0.6;
   }
+  /* 🦜 섀도잉 미니게임 — hr-recognized-char를 그대로 재사용하되, 히라가나 한 글자가 아니라
+     단어 전체(2~5글자)가 들어가므로 폰트 크기만 줄이고 줄바꿈을 허용함 */
+  .shadow-recognized-text {
+    font-size: 26px;
+    min-height: 40px;
+    white-space: normal;
+    word-break: keep-all;
+  }
   @keyframes pulseListening {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
@@ -1914,6 +1922,90 @@
     100% { transform: scale(1) rotate(0deg); opacity: 1; }
   }
 
+  /* 🏅 스트릭 배지 갤러리·테마 선택 — learning-theory-roadmap.md 15번 섹션 */
+  .streak-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+    flex-wrap: wrap;
+  }
+  .streak-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 52px;
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    background: var(--washi);
+    padding: 6px 4px 5px;
+    cursor: default;
+    font-family: inherit;
+  }
+  .streak-badge-emoji { font-size: 17px; line-height: 1; }
+  .streak-badge-label { font-size: 9px; color: #8a8272; }
+  .streak-badge-locked { opacity: 0.45; }
+  .streak-badge-earned[onclick] { cursor: pointer; }
+  .streak-badge-earned[onclick]:hover { border-color: var(--gold); }
+  .streak-badge-active {
+    border-color: var(--hanko);
+    background: rgba(183,65,14,0.08);
+  }
+  .streak-badge-active .streak-badge-label { color: var(--hanko); font-weight: 700; }
+
+  /* 새 배지 획득 팝업 — 화면 상단에서 살짝 내려왔다 올라가며 사라짐 */
+  .streak-badge-popup {
+    position: fixed;
+    top: -60px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 999px;
+    padding: 10px 18px;
+    box-shadow: 0 6px 18px rgba(33,29,25,0.25);
+    z-index: 999;
+    transition: top 0.4s cubic-bezier(.175,.885,.32,1.275), opacity 0.4s;
+    opacity: 0;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .streak-badge-popup-emoji { font-size: 18px; }
+  .streak-badge-popup-show {
+    top: 16px;
+    opacity: 1;
+  }
+
+  /* 🎨 스트릭 배지로 해금하는 테마 — 기존 :root 변수 중 강조색 계열만 오버라이드해서
+     디자인 시스템의 나머지(레이아웃/폰트/구조)는 그대로 유지함 */
+  body.theme-sakura {
+    --hanko: #d6598a;
+    --gold: #c98fb0;
+    --sage: #8a9e6e;
+    --washi-deep: #F7E9EF;
+  }
+  body.theme-ocean {
+    --hanko: #1f6f8b;
+    --gold: #3a8fa3;
+    --sage: #4f8a7b;
+    --washi-deep: #E7F1F2;
+  }
+  body.theme-night {
+    --hanko: #6a5acd;
+    --gold: #8d7fd6;
+    --sage: #5c6e91;
+    --sumi: #E7E3F5;
+    --washi: #201C33;
+    --washi-deep: #2A2545;
+    --line: rgba(231,227,245,0.16);
+  }
+
   /* 🌙 수면 전 통합 프롬프트 — learning-theory-roadmap.md Part 4 §3 */
   .pre-sleep-card {
     display: none;
@@ -2091,6 +2183,111 @@
     line-height: 1.6;
   }
   .theory-card-applied b { color: var(--sage); }
+
+  /* 🎭 미니 롤플레이(상황극) — learning-theory-roadmap.md Part 2 §4-1 */
+  .roleplay-scenario-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+  }
+  .roleplay-scenario-card {
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .roleplay-scenario-card:active { transform: scale(0.96); }
+  .roleplay-scenario-emoji { font-size: 34px; margin-bottom: 8px; }
+  .roleplay-scenario-title { font-family:'Shippori Mincho',serif; font-weight:700; color: var(--indigo); font-size: 15px; }
+  .roleplay-scenario-intro { font-size: 12px; color: #7a7364; margin-top: 6px; line-height: 1.5; }
+  .roleplay-scenario-badge {
+    margin-top: 10px;
+    font-size: 10.5px;
+    color: var(--sage);
+    background: rgba(110,127,92,0.12);
+    border-radius: 8px;
+    padding: 4px 8px;
+    display: inline-block;
+  }
+
+  .roleplay-npc-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--washi-deep);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .roleplay-npc-emoji { font-size: 40px; flex-shrink: 0; }
+  .roleplay-npc-name { font-size: 11.5px; color: var(--sage); font-weight: 700; margin-bottom: 4px; }
+  .roleplay-npc-line { font-size: 17px; color: var(--sumi); font-weight: 700; line-height: 1.5; }
+  .roleplay-npc-line-kr { font-size: 13px; color: #7a7364; margin-top: 4px; }
+  .roleplay-replay-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    background: var(--washi);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    width: 40px; height: 40px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .roleplay-attempt-note {
+    text-align: center;
+    font-size: 12px;
+    color: #9a9384;
+    margin-bottom: 14px;
+  }
+  .roleplay-mic-btn {
+    display: block;
+    margin: 0 auto 6px;
+    background: var(--sage);
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .roleplay-mic-status {
+    text-align: center;
+    font-size: 12px;
+    color: var(--sage);
+    min-height: 16px;
+    margin-bottom: 12px;
+  }
+  .roleplay-choice-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .roleplay-choice-btn {
+    background: #fff;
+    border: 1.5px solid var(--hanko);
+    color: var(--hanko);
+    border-radius: 14px;
+    padding: 13px 16px;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .roleplay-choice-btn:active { background: rgba(183,65,14,0.1); }
+  .roleplay-back-link {
+    display: inline-block;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    color: #9a9384;
+    cursor: pointer;
+  }
 
   .hs-stat-legend {
     display: flex;
@@ -4449,6 +4646,7 @@
     gap:10px;
   }
   .gcard{
+    position: relative;
     background:var(--washi-deep);
     border:1px solid var(--line);
     border-radius:12px;
@@ -4459,6 +4657,24 @@
     user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
+  /* 💭 자기참조 효과(단어 축) — 단어 상세보기를 여는 정보 버튼.
+     .gcard * { pointer-events:none } 규칙을 이 버튼만 무시하도록 pointer-events:auto로
+     되돌려서, 카드 전체 클릭(뒤집기)과 별개로 독립 클릭될 수 있게 함 */
+  .gcard-detail-btn{
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 20px; height: 20px;
+    line-height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.9);
+    font-size: 11px;
+    padding: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    color: var(--indigo);
+  }
+  .gcard-detail-btn:hover{ border-color: var(--gold); }
   .gcard:hover{border-color:var(--gold); transform:translateY(-2px); background-color: var(--washi);}
   .gcard * {
     pointer-events: none;
@@ -4736,6 +4952,7 @@
   <div id="gameScreenContainer">
     <button id="gameBackBtn" onclick="backToCategoryFromGame()">◀ 이전 메뉴</button>
     <div id="reviewSessionBanner" class="review-session-banner" style="display:none;"></div>
+    <div id="vocabReviewSessionBanner" class="review-session-banner" style="display:none;"></div>
 
   <!-- SPEECH MODE CONTENT -->
   <div id="speechMode" class="mode-content active">
@@ -4851,33 +5068,46 @@
       <div class="quiz-score-board">
         <div>현재 점수: <span id="spellingScore">0</span>점</div>
         <div>연속 콤보: 🔥<span id="spellingCombo">0</span></div>
+        <div>문제: <span id="spellingProgress">0</span>/10</div>
       </div>
 
-      <div class="audio-prompt-box">
-        <div class="sound-wave-icon">🔤</div>
-        <div class="spelling-kr-hint" id="spellingKrHint">???</div>
+      <!-- 문제 풀이 화면 -->
+      <div id="spellingQuestionScreen">
+        <div class="audio-prompt-box">
+          <div class="sound-wave-icon">🔤</div>
+          <div class="spelling-kr-hint" id="spellingKrHint">???</div>
+        </div>
+
+        <!-- 한 글자씩 순서대로 다시 들려주는 버튼 -->
+        <button class="quiz-audio-btn" id="spellingPlayBtn" onclick="playSpellingSequence()">
+          🔊 한 글자씩 다시 듣기
+        </button>
+
+        <!-- 지금까지 맞춘 글자를 순서대로 보여주는 칸 -->
+        <div class="spelling-answer-slots" id="spellingAnswerSlots">
+          <!-- JS가 동적으로 생성 -->
+        </div>
+
+        <!-- 섞여있는 히라가나 글자 버튼들 (순서대로 눌러야 함) -->
+        <div class="spelling-letter-options" id="spellingLetterOptions">
+          <!-- Buttons will be injected here -->
+        </div>
+
+        <div class="writing-result-feedback" id="spellingFeedback"></div>
+
+        <!-- 정답을 다 맞추면 이모지가 나타나고 전체 발음을 들려줍니다 -->
+        <div class="spelling-emoji-reveal" id="spellingEmojiReveal" style="display:none;">
+          <div class="spelling-emoji-big"></div>
+        </div>
       </div>
 
-      <!-- 한 글자씩 순서대로 다시 들려주는 버튼 -->
-      <button class="quiz-audio-btn" id="spellingPlayBtn" onclick="playSpellingSequence()">
-        🔊 한 글자씩 다시 듣기
-      </button>
-
-      <!-- 지금까지 맞춘 글자를 순서대로 보여주는 칸 -->
-      <div class="spelling-answer-slots" id="spellingAnswerSlots">
-        <!-- JS가 동적으로 생성 -->
-      </div>
-
-      <!-- 섞여있는 히라가나 글자 버튼들 (순서대로 눌러야 함) -->
-      <div class="spelling-letter-options" id="spellingLetterOptions">
-        <!-- Buttons will be injected here -->
-      </div>
-
-      <div class="writing-result-feedback" id="spellingFeedback"></div>
-
-      <!-- 정답을 다 맞추면 이모지가 나타나고 전체 발음을 들려줍니다 -->
-      <div class="spelling-emoji-reveal" id="spellingEmojiReveal" style="display:none;">
-        <div class="spelling-emoji-big"></div>
+      <!-- 결과 화면 — 10단어를 완성하면 표시(learning-theory-roadmap.md §6 "미구현으로 남긴 것" 해소) -->
+      <div id="spellingResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">완성한 단어 개수: <b><span id="spellingResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="spellingResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="spellingResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startSpellingRound()">🔄 다시 하기</button>
       </div>
     </div>
     <br>
@@ -5785,6 +6015,53 @@
     <br>
   </div>
 
+  <!-- 🦜 섀도잉 미니게임 MODE CONTENT — 소리를 듣는 즉시 곧바로 따라 말하는 게임 -->
+  <div id="shadowingMode" class="mode-content">
+    <div class="hs-container">
+      <div class="quiz-score-board">
+        <div>정답: <span id="shadowCorrectScore">0</span></div>
+        <div>아쉬워요: <span id="shadowWrongScore">0</span></div>
+        <div>문제: <span id="shadowProgress">0</span>/10</div>
+      </div>
+
+      <!-- 시작 전 안내 화면 -->
+      <div id="shadowStartScreen">
+        <div class="hs-start-desc">단어 소리가 나오고 나면, 마이크가 자동으로 켜져요! 소리가 끝나자마자 곧바로 따라 말해보세요 — 원어민의 리듬과 억양을 그대로 흉내내는 "섀도잉" 연습이에요. 다시 듣기 버튼은 없고, 그 순간 바로 따라 하는 게 핵심이에요. 총 10문제예요.</div>
+        <button class="quiz-audio-btn" onclick="startShadowingGame()">🚀 게임 시작하기</button>
+        <div id="shadowUnsupportedMsg" class="unsupported-msg" style="display:none; margin-top:10px;">
+          이 브라우저는 음성 인식을 지원하지 않아요. 안드로이드 Chrome 브라우저를 사용해보세요.
+        </div>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="shadowQuestionScreen" style="display:none;">
+        <div class="hr-attempt-label" id="shadowStatusLabel">🔊 소리를 듣는 중...</div>
+
+        <div class="writing-emoji" id="shadowEmoji" style="font-size:56px;">🦜</div>
+
+        <div class="hr-columns">
+          <div class="hr-column">
+            <div class="hr-column-label">인식된 발음</div>
+            <div class="hr-recognized-char shadow-recognized-text" id="shadowRecognizedText">🎤</div>
+          </div>
+        </div>
+
+        <div class="hs-timerbar-track"><div class="hs-timerbar-fill" id="shadowTimerFill"></div></div>
+
+        <div class="trace-result-feedback" id="shadowFeedback"></div>
+      </div>
+
+      <!-- 결과 화면 -->
+      <div id="shadowResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">정답: <b><span id="shadowResultCorrect">0</span>개</b></div>
+        <div class="hs-result-row hs-result-score">아쉬워요: <b><span id="shadowResultWrong">0</span>개</b></div>
+        <button class="quiz-audio-btn" onclick="startShadowingGame()">🔄 다시 하기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
   <!-- 🧠 단어 메모리 게임 MODE CONTENT (이모지+발음 순서를 기억해서 단어카드를 순서대로 누르는 게임) -->
   <div id="wordMemoryMode" class="mode-content">
     <div class="hs-container">
@@ -6360,6 +6637,48 @@
     <br>
   </div>
 
+  <!-- 🎭 미니 롤플레이(상황극) MODE CONTENT — learning-theory-roadmap.md Part 2 §4-1 프로토타입.
+       정답 맞히기가 아니라 "목표 달성"이 목적인 분기 대화 게임 -->
+  <div id="roleplayMode" class="mode-content">
+    <div class="hs-container">
+
+      <!-- 시나리오 선택 화면 -->
+      <div id="roleplayListScreen">
+        <div class="hs-start-desc">상황 속에서 대화를 나누며 목표를 이뤄봐요! 버튼을 눌러도 되고, 마이크로 직접 말해도 돼요. 정답을 못 맞혀도 괜찮아요 — 점원이 다시 물어봐 줄 거예요. 시나리오를 하나 골라보세요.</div>
+        <div class="roleplay-scenario-grid" id="roleplayScenarioGrid"><!-- JS가 시나리오 카드를 생성합니다 --></div>
+      </div>
+
+      <!-- 대화 진행 화면 -->
+      <div id="roleplayDialogueScreen" style="display:none;">
+        <span class="roleplay-back-link" onclick="backToRoleplayList()">◀ 다른 상황 고르기</span>
+        <div class="roleplay-npc-row">
+          <div class="roleplay-npc-emoji" id="roleplayNpcEmoji">🧑‍🍳</div>
+          <div>
+            <div class="roleplay-npc-name" id="roleplayNpcName">점원</div>
+            <div class="roleplay-npc-line" id="roleplayNpcLine"></div>
+            <div class="roleplay-npc-line-kr" id="roleplayNpcLineKr"></div>
+          </div>
+          <button class="roleplay-replay-btn" onclick="replayRoleplayLine()">🔊</button>
+        </div>
+        <div class="roleplay-attempt-note">다시 물어본 횟수: <span id="roleplayAttemptCount">0</span>번</div>
+        <button class="roleplay-mic-btn" id="roleplayMicBtn" onclick="startRoleplaySpeechAttempt()">🎤 말해서 답하기</button>
+        <div class="roleplay-mic-status" id="roleplayMicStatus"></div>
+        <div class="roleplay-choice-box" id="roleplayChoiceBox"><!-- JS가 선택지 버튼을 생성합니다 --></div>
+      </div>
+
+      <!-- 미션 완료 결과 화면 -->
+      <div id="roleplayResultScreen" style="display:none;">
+        <div class="hs-result-title" id="roleplayResultEmoji">🎉</div>
+        <div class="roleplay-npc-line" style="margin-bottom:4px;" id="roleplayResultLine"></div>
+        <div class="roleplay-npc-line-kr" style="margin-bottom:14px;" id="roleplayResultLineKr"></div>
+        <div class="hs-result-row" id="roleplayResultDesc"></div>
+        <button class="quiz-audio-btn" onclick="retryRoleplayScenario()">🔄 같은 상황 다시 하기</button>
+        <button class="quiz-audio-btn" style="margin-top:8px;" onclick="backToRoleplayList()">🎭 다른 상황 고르기</button>
+      </div>
+    </div>
+    <br>
+  </div>
+
   </div> <!-- /#gameScreenContainer -->
 
   <!-- 📇 단어 카드 패널: 오늘 맞춘 단어 + 전체 단어 카드 갤러리 (초기 메뉴의 '단어 카드' 카드에서 진입) -->
@@ -6401,8 +6720,9 @@
   <div class="log-list" id="logList"></div>
 
   <div class="gallery-title">단어 카드</div>
-  <div class="gallery-desc">카드를 누르면 발음을 들려주고 한글 뜻을 확인할 수 있어요 · 배경색은 게임에서 틀린 비율을 나타내요 (초록 0~10% · 노랑 10~50% · 분홍 50%↑)</div>
+  <div class="gallery-desc">카드를 누르면 발음을 들려주고 한글 뜻을 확인할 수 있어요 · 배경색은 게임에서 틀린 비율을 나타내요 (초록 0~10% · 노랑 10~50% · 분홍 50%↑) · 카드 오른쪽 위 🔍 버튼을 누르면 상세보기를 볼 수 있어요</div>
   <div class="gallery" id="gallery"></div>
+  <div class="ltm-detail-box" id="wordDetailBox"></div>
   </div>
 
 <div class="menu-level" id="menuVideosLevel" style="display:none;">
@@ -6478,6 +6798,10 @@
     </div>
     <div class="ltm-vocab-stage-row" id="ltmVocabStageRow"></div>
     <div class="ltm-vocab-stage-desc">퀴즈·쓰기·말하기·문장조합 등 히라가나 밖 모든 게임에서 만난 단어들이 재인(🔍)→회상(✍️)→발화(🗣️)→유지(🌱) 중 어디쯤 있는지 보여줘요</div>
+    <div class="ltm-review-launch" style="margin-top:10px;">
+      <div class="ltm-review-desc" id="ltmVocabReviewDesc">복습할 단어를 확인하는 중…</div>
+      <button class="quiz-audio-btn" id="ltmVocabReviewStartBtn" onclick="startVocabReviewSession()">📚 어휘 복습 세트 시작하기</button>
+    </div>
   </div>
 </div>
 
@@ -6513,7 +6837,7 @@
     <span style="width:64px;"></span>
   </div>
 
-  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 18가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
+  <div class="theory-intro">이 앱의 히라가나 학습 기능(카드찾기·쓰기·읽기·장기기억 현황·복습 세트)은 아래 19가지 학습 이론을 바탕으로 설계됐어요. 각 이론이 실제로 앱 어디에 어떻게 적용됐는지 그림과 함께 소개할게요.</div>
 
   <!-- 1. 에빙하우스 망각곡선 -->
   <div class="theory-card">
@@ -6577,7 +6901,7 @@
       </svg>
     </div>
     <div class="theory-card-desc">글자마다 0~7단계의 <b>숙련 단계</b>를 매겨요. <b>맞히면 +1단계</b>(다음 복습이 더 늦게), <b>틀리면 -2단계</b>(다음 복습이 훨씬 빨리 돌아와요) — SM-2 계열의 간이 알고리즘이에요.</div>
-    <div class="theory-card-applied">📍 적용: 카드찾기·쓰기 두 게임의 글자별 기록(srsStage)에 그대로 쓰이고, 히라가나 카드찾기의 <b>제한 시간</b>도 단계가 높을수록 살짝 여유 있게 조정돼요.</div>
+    <div class="theory-card-applied">📍 적용: 카드찾기·쓰기 두 게임의 글자별 기록(srsStage)에 그대로 쓰이고, 히라가나 카드찾기의 <b>제한 시간</b>도 단계가 높을수록 살짝 여유 있게 조정돼요. 이제 <b>단어(어휘)마다도</b> 같은 방식의 숙련 단계를 매기고, 망각확률이 높은 단어를 모아 <b>어휘 복습 세트</b>로도 이어져요.</div>
   </div>
 
   <!-- 3. 재인·회상·발화 3중 검증 -->
@@ -6645,7 +6969,7 @@
       </svg>
     </div>
     <div class="theory-card-desc">망각 확률이 높을수록(=복습 시점이 다가왔거나 지났을수록) 문제로 뽑힐 확률도 커져요. 그렇다고 0으로 만들진 않아서, 이미 잘 아는 글자도 <b>가끔은 등장</b>해 진짜 오래 기억하는지 계속 점검해요.</div>
-    <div class="theory-card-applied">📍 적용: 카드찾기·쓰기의 문제 출제, 그리고 오답 글자가 다음 세트에 더 자주 나오는 가중치 옵션에도 같은 원리가 쓰여요.</div>
+    <div class="theory-card-applied">📍 적용: 카드찾기·쓰기의 문제 출제, 그리고 오답 글자가 다음 세트에 더 자주 나오는 가중치 옵션에도 같은 원리가 쓰여요. <b>단어 퀴즈(퀴즈게임·오디오→이모지)</b>도 이제 잊어버릴 것 같은 단어부터 더 자주 출제해요.</div>
   </div>
 
   <!-- 5. 복습 세트 -->
@@ -6674,7 +6998,7 @@
       </svg>
     </div>
     <div class="theory-card-desc">"🔴 복습 필요" 등급 글자만 따로 모아서, 카드찾기·쓰기·읽기 3게임을 <b>랜덤한 순서로 섞어</b> 한 번씩 이어서 풀게 해요. 복습이 급한 글자가 없으면 "학습 중" 글자로 대신 채워요.</div>
-    <div class="theory-card-applied">📍 적용: 장기기억 현황판의 "🔁 복습 세트 시작하기" 버튼 — 게임이 끝날 때마다 2.2초 뒤 자동으로 다음 게임으로 넘어가요.</div>
+    <div class="theory-card-applied">📍 적용: 장기기억 현황판의 "🔁 복습 세트 시작하기" 버튼 — 게임이 끝날 때마다 2.2초 뒤 자동으로 다음 게임으로 넘어가요. 이제 <b>단어(어휘)에도</b> 같은 원리의 "📚 어휘 복습 세트"가 있어요 — 잊어버릴 것 같은 단어만 모아서 단어 퀴즈·문장 맞히기·철자 맞추기를 랜덤 순서로 이어서 풀어요.</div>
   </div>
 
   <!-- 6. 활성 학습 세트 컨트롤러 -->
@@ -6885,8 +7209,8 @@
       </svg>
     </div>
     <div class="theory-card-desc">모든 아이가 똑같은 순서로 배울 필요는 없어요. 사전지식·작업기억·연상학습 속도·청지각 변별력 같은 <b>진단 결과</b>를 바탕으로 "노출/재인/회상/발화/유지" 5단계를 얼마나 섞어줄지 목표 비율을 정하고, 지금 배우는 글자들이 실제로 어느 단계에 몰려 있는지와 비교해 <b>가장 부족한 단계</b>의 게임을 추천해요.</div>
-    <div class="theory-card-desc" style="margin-top:8px;">아직은 규칙 기반의 1단계 버전이에요 — 히라가나 학습(카드찾기·쓰기·읽기)에만 우선 적용했고, 실제 성과를 보며 비율을 스스로 다듬는 것은 다음 단계 과제로 남겨뒀어요.</div>
-    <div class="theory-card-applied">📍 적용: 상위 메뉴 상단의 "오늘의 추천" 카드(<code>renderTodayRecommendation()</code>)가 <code>pickNextGameForSession()</code>으로 계산된 추천을 보여주고, "지금 시작하기"를 누르면 해당 게임(또는 복습 세트)로 바로 이동해요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">아직은 규칙 기반의 1단계 버전이에요 — 히라가나 학습(카드찾기·쓰기·읽기)과 단어 학습(퀴즈·철자·문장)을 함께 보고 그날그날 어느 쪽이 더 부족한지 골라 추천하며, 실제 성과를 보며 비율을 스스로 다듬는 것은 다음 단계 과제로 남겨뒀어요.</div>
+    <div class="theory-card-applied">📍 적용: 상위 메뉴 상단의 "오늘의 추천" 카드(<code>renderTodayRecommendation()</code>)가 <code>pickNextGameForSession()</code>으로 계산된 추천을 보여주고, "지금 시작하기"를 누르면 해당 게임(또는 복습 세트)로 바로 이동해요. 단어 학습을 추천할 땐 직전에 썼던 방식(소리/글자/그림)과 다른 방식을 우선 골라줘요(<code>pickWordAxisMode()</code>). E단계(유지·재맥락화)를 추천할 땐 히라가나·어휘 두 축 중 더 뒤처진 쪽으로 안내하고, 어휘 축이면 <b>어휘 복습 세트</b>(<code>startVocabReviewSession()</code>)로 바로 이동해요.</div>
   </div>
 
   <!-- 14. 정교화된 시연 · 자기참조 효과 -->
@@ -6911,7 +7235,7 @@
     </div>
     <div class="theory-card-desc">앱이 미리 만들어준 연상(이중부호화)보다, <b>내가 직접</b> 나의 경험이나 익숙한 사물과 연결지은 정보가 훨씬 오래 기억에 남아요. "나 자신"과 관련지은 정보일수록 기억흔적이 깊어진다는 자기참조 효과(self-reference effect)예요.</div>
     <div class="theory-card-desc" style="margin-top:8px;">타이핑 부담을 없애기 위해 자유 입력 대신 <b>이모지 5개 중 선택</b>하는 방식으로 시작했고, 다음에 같은 글자를 다시 보면 지난번 선택을 함께 보여줘 연결을 한 번 더 떠올리게 해요.</div>
-    <div class="theory-card-applied">📍 적용: 장기기억 현황 상세보기(<code>showLtmDetail()</code>)의 "💭 이 글자, 나의 하루와 닮은 점이 있나요?" 위젯 — 선택은 완전히 선택 사항이고, 서버 전송 없이 기기 로컬(<code>kotobaSelfReferenceNotes</code>)에만 저장돼요.</div>
+    <div class="theory-card-applied">📍 적용: 장기기억 현황 상세보기(<code>showLtmDetail()</code>)의 "💭 이 글자, 나의 하루와 닮은 점이 있나요?" 위젯 — 선택은 완전히 선택 사항이고, 서버 전송 없이 기기 로컬(<code>kotobaSelfReferenceNotes</code>)에만 저장돼요. 같은 위젯을 단어 카드 상세보기(<code>showWordDetail()</code>)에도 그대로 재사용해, 히라가나뿐 아니라 <b>단어</b> 하나하나에도 나만의 연결을 남길 수 있어요(단어 카드의 🔍 버튼).</div>
   </div>
 
   <!-- 15. 오답 나무 키우기 -->
@@ -7018,6 +7342,58 @@
     <div class="theory-card-desc">이미 아는 단어를 <b>스스로 순서대로 조합</b>해 문장이나 합성어를 완성하는 과정은, 완성된 결과를 보기만 하는 것보다 기억에 오래 남아요(생성 효과, generation effect). "2단어 문장 맞히기"와 "합성어 맞추기"는 원래도 이 원리로 만들어진 게임이었어요.</div>
     <div class="theory-card-desc" style="margin-top:8px;">이번엔 여기에 <b>요리 비유 연출</b>만 얹었어요 — 판정 로직은 그대로 두고, 정답 카드를 고를 때마다 재료가 냄비로 날아 들어가고, 두 재료가 모두 맞으면 냄비가 통통 튀며 "😋" 리액션이 떠올라요. 생성 과정 자체의 재미를 키워서 반복 참여를 유도하려는 목적이에요.</div>
     <div class="theory-card-applied">📍 적용: 2단어 문장 맞히기·합성어 맞추기 공용 로직(<code>createSequencePickQuizGame()</code>)의 <code>pickPart()</code>에서 정답을 고를 때마다 <code>playIngredientTossAnimation()</code>이, 두 재료가 모두 맞으면 <code>playDishCompleteReaction()</code>이 호출돼요. 점수·타이머·SRS 기록에는 전혀 관여하지 않는 순수 연출 레이어예요.</div>
+  </div>
+
+  <!-- 19. 섀도잉 미니게임 -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🦜</span>
+      <span class="theory-card-title">듣는 즉시 따라 말해요 — 섀도잉</span>
+      <span class="theory-card-tag">Shadowing Practice</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="35" y="52" font-size="26" text-anchor="middle">🔊</text>
+        <path d="M60,45 L100,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr14)"/>
+        <text x="130" y="52" font-size="24" text-anchor="middle">🦜</text>
+        <path d="M160,45 L200,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr14)"/>
+        <text x="230" y="52" font-size="24" text-anchor="middle">🎙️</text>
+        <defs>
+          <marker id="arr14" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">원어민 음성을 듣는 즉시 <b>거의 동시에</b> 따라 말하는 섀도잉은, 다 듣고 난 뒤 여유롭게 따라 하는 것보다 부호화 깊이가 크고, 리듬·억양까지 함께 체화시켜 발화(production) 인출 경로를 강화해요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">그래서 이 게임은 마이크 버튼을 직접 누르는 게 아니라, <b>소리 재생이 끝나는 순간 자동으로</b> 마이크가 켜져요. 인식 제한 시간도 그 단어의 실제 재생 길이 × 1.2로 계산해서, 짧은 단어는 짧게 긴 단어는 조금 더 넉넉하게 기다려줘요. 다시 듣기 없이 1번의 시도로 끝나는 것도, "그 순간 곧바로" 따라 하는 섀도잉의 특성을 살리기 위해서예요.</div>
+    <div class="theory-card-applied">📍 적용: 말하기(음성 인식) 카테고리의 "섀도잉" 게임(<code>initShadowingGame()</code>/<code>startShadowingGame()</code>). <code>speakTTS()</code>의 <code>onEnd</code> 콜백으로 재생 종료 시점을 잡아 <code>startShadowAttempt()</code>가 마이크를 자동으로 켜고, 인식 결과는 정답 단어 포함 여부만 우선 판정해요(1차 구현 — 타이밍·억양 정밀 비교는 범위 밖).</div>
+  </div>
+
+  <!-- 20. 미니 롤플레이(상황극) -->
+  <div class="theory-card">
+    <div class="theory-card-head">
+      <span class="theory-card-emoji">🎭</span>
+      <span class="theory-card-title">대화로 목표를 이뤄요 — 미니 롤플레이</span>
+      <span class="theory-card-tag">Goal-Oriented Simulation</span>
+    </div>
+    <div class="theory-illust">
+      <svg viewBox="0 0 260 90" xmlns="http://www.w3.org/2000/svg">
+        <text x="35" y="52" font-size="26" text-anchor="middle">🧑‍🍳</text>
+        <path d="M60,45 L100,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr15)"/>
+        <text x="130" y="52" font-size="24" text-anchor="middle">🍙</text>
+        <path d="M160,45 L200,45" stroke="var(--gold)" stroke-width="2" marker-end="url(#arr15)"/>
+        <text x="230" y="52" font-size="24" text-anchor="middle">😋</text>
+        <defs>
+          <marker id="arr15" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="theory-card-desc">이 게임은 <b>정답 맞히기</b>가 목적이 아니라, "이 말을 해서 오니기리를 받아내는 것" 같은 <b>목표 달성</b>이 목적이에요. 실제 언어 사용은 늘 이런 목적을 갖고 있어서, 몰입 환경의 일부(실제 소통 목적의 상호작용)를 아주 약하게나마 흉내내볼 수 있어요.</div>
+    <div class="theory-card-desc" style="margin-top:8px;">엉뚱한 말을 골라도 "❌ 오답입니다"라고 끝나지 않아요 — 점원이 <b>"다시 한 번 말해줄래요?"</b>처럼 자연스럽게 되물으며 대화가 계속돼요. 그래서 실수해도 안전하다는 느낌(낮은 정의적 여과)을 주고, 같은 장면을 다시 만나도 대사가 <b>매번 조금씩 달라져서</b>(부호화 다양성) 특정 문장을 통째로 외우기보다 상황에 맞는 말을 고르는 연습이 돼요.</div>
+    <div class="theory-card-applied">📍 적용: "미니 상황극" 카테고리(<code>initRoleplayGame()</code>). 시나리오는 <code>ROLEPLAY_SCENARIOS</code>(data.js)에 분기 대화 그래프로 정의돼 있고, <code>chooseRoleplayOption()</code>이 선택에 따라 다음 노드로 이동해요. ⚠️ 1차 프로토타입 범위 — 선택형 응답만 지원하고(음성 응답은 다음 확장 후보), 진행 상태는 SRS·장기기억 통계와 아직 연동하지 않아요.</div>
   </div>
 
 </div>
