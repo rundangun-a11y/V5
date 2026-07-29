@@ -55,7 +55,10 @@ const CUSTOM_WORD_ICONS = {
 /* 단어에 맞는 커스텀 SVG 아이콘이 CUSTOM_WORD_ICONS에 등록돼 있으면 그것을,
    없으면 기존 이모지를 그대로 보여주는 HTML 조각을 반환합니다. */
 function renderWordVisual(word){
-  const iconBuilder = CUSTOM_WORD_ICONS[word.jp];
+  // 🆕 §3-1 이어지는 전환 — word.jp 직접 접근 대신 toGenericLearningItem(word).key로 조회.
+  // CUSTOM_WORD_ICONS는 여전히 jp 문자열을 키로 쓰므로 동작은 이전과 100% 동일.
+  const genericItem = word ? toGenericLearningItem(word) : null;
+  const iconBuilder = genericItem ? CUSTOM_WORD_ICONS[genericItem.key] : undefined;
   if(iconBuilder) return `<span class="custom-icon-wrap">${iconBuilder()}${posBadgeHTML(word)}</span>`;
   return emojiVisualHTML(word);
 }
@@ -67,12 +70,15 @@ function renderWordVisual(word){
 
 /* DICTIONARY, ONOMATOPOEIA_ITEMS, RIDDLES 등 여러 데이터 배열이 같은 jp 단어를
    공유하므로, word 자체에 pos가 없으면 DICTIONARY에서 같은 jp를 찾아 재사용합니다. */
+/* 🆕 §3-1 2단계 시범 전환(역방향 조회) — DICTIONARY.find() 직접 호출 대신
+   findGenericLearningItemByKey()로 조회. 반환값은 여전히 pos 문자열 하나뿐이라 호출부(posBadgeHTML
+   등)엔 영향 없음 — found.meta.pos는 기존 found.pos와 항상 같은 값(layering-roadmap.md §3-1). */
 function getWordPos(word){
   if(!word) return null;
   if(word.pos) return word.pos;
   if(word.jp){
-    const found = DICTIONARY.find(d => d.jp === word.jp);
-    if(found) return found.pos || null;
+    const found = findGenericLearningItemByKey(word.jp, 'word');
+    if(found) return found.meta.pos || null;
   }
   return null;
 }
@@ -514,15 +520,41 @@ const stampRomaji = document.getElementById('stampRomaji');
 const stampKr = document.getElementById('stampKr');
 const logList = document.getElementById('logList');
 const galleryEl = document.getElementById('gallery');
+/* 🗂️ localStorage 네임스페이스 이관 — layering-roadmap.md §3-2.
+   지금은 모든 저장 키가 `kotoba` 접두사 하나로 뭉쳐 있어서, 두 번째 학습 대상(팩)을
+   추가하면 저장 키가 충돌한다. 새 키는 `koe:{targetId}:{name}` 형태로 이관하되, 기존
+   사용자의 저장 데이터가 날아가지 않도록 구 키 → 신 키 1회성 마이그레이션을 거친다.
+   targetId는 지금은 'hiragana' 하나로 고정해도 됨 — 지금 당장 여러 대상을 지원할
+   필요는 없고, 다만 키 구조에 자리를 미리 만들어두는 것이 목적. */
+const CURRENT_TARGET_ID = 'hiragana';
+
+function storageKey(name, targetId = CURRENT_TARGET_ID) {
+  return `koe:${targetId}:${name}`;
+}
+
+/* 구 키(oldKey)에 값이 있고 신 키(newKey)에는 아직 값이 없으면 신 키로 값을 복사한다.
+   구 키는 롤백 안전망으로 그대로 남겨두고 지우지 않는다. "신 키가 이미 있으면 손대지
+   않는다" 조건 덕분에 여러 번 호출돼도 안전(딱 한 번만 실제로 복사가 일어남) —
+   신 키에 쓴 데이터가 나중에 구 키 값으로 덮어써지는 사고를 막아준다. */
+function migrateLegacyStorageKey(oldKey, newKey) {
+  try {
+    if (localStorage.getItem(newKey) !== null) return; // 이미 이관됨(또는 새로 쓰기 시작함)
+    const legacy = localStorage.getItem(oldKey);
+    if (legacy !== null) localStorage.setItem(newKey, legacy);
+  } catch (e) { /* 마이그레이션 실패해도 앱은 구 키로 계속 정상 동작하므로 조용히 무시 */ }
+}
+
 let wordStats = {}; // 📊 단어별 정답/오답 통계 { [jp]: { correct, wrong, channels:{B,C,D} } } - 모든 게임 모드 공통 누적, localStorage에 영속 저장됨
-const WORD_STATS_KEY = 'kotobaWordGameStats';
+const WORD_STATS_LEGACY_KEY = 'kotobaWordGameStats'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const WORD_STATS_KEY = storageKey('wordGameStats'); // 🆕 §3-2 — koe:hiragana:wordGameStats
 
 /* 🔀 인출 단서 다변화(모달리티 로테이션) — learning-theory-roadmap.md Part 4 §2에서
    "실질적으로 여러 모드 중에서 골라야 하는 상황은 어휘 축 §3 오케스트레이터가 구현될 때
    처음 발생한다"고 미뤄뒀던 부분의 실제 구현. 어휘 축(단어 게임)에서 직전에 어떤
    모달리티(present/response)로 문제를 풀었는지 기록해두고, 다음 추천 때 다른 모달리티를
    우선 고르는 데 사용함. */
-const LAST_VOCAB_MODALITY_KEY = 'kotobaLastVocabModality';
+const LAST_VOCAB_MODALITY_LEGACY_KEY = 'kotobaLastVocabModality'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const LAST_VOCAB_MODALITY_KEY = storageKey('lastVocabModality'); // 🆕 §3-2 — koe:hiragana:lastVocabModality
 
 /* 🪜 §2 단계 판정 일반화 — learning-theory-roadmap.md Part 2 §6(a).
    지금 어떤 게임 모드가 실행 중인지 기록해두는 전역 변수. switchMode()에서 매번 갱신되며,
@@ -548,13 +580,15 @@ let currentHsQuestion = null;
 /* ⚡ 히라가나 스피드게임 - 글자별 정답/오답 누적 통계 (브라우저에 저장되어 다음 플레이에도 유지됨)
    틀리거나 시간 초과된 글자는 오답 횟수가 올라가 다음 문제 세트에 더 자주 등장하고,
    게임 시작 화면의 46자 그리드에 정답/오답 횟수와 오답률 색상으로 표시됩니다 */
-const HS_STATS_KEY = 'kotobaHsCharStats';
+const HS_STATS_LEGACY_KEY = 'kotobaHsCharStats'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HS_STATS_KEY = storageKey('hsCharStats'); // 🆕 §3-2 — koe:hiragana:hsCharStats
 
 /* ⚡ 히라가나 스피드게임 - 오답 가중치 강도 (0=균등, 1=약하게, 2=보통(기본), 3=강하게, 4=오답만)
    글자별 오답 횟수에 이 배수를 곱해 다음 문제 세트에서 얼마나 더 자주 나올지 결정합니다.
    4(오답만)를 고르면 배수 대신, 오답률이 30% 이상인 글자만 출제 대상으로 걸러냅니다.
    브라우저에 저장되어 다음 플레이에도 선택했던 강도가 유지됩니다 */
-const HS_WEIGHT_KEY = 'kotobaHsWeightLevel';
+const HS_WEIGHT_LEGACY_KEY = 'kotobaHsWeightLevel'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HS_WEIGHT_KEY = storageKey('hsWeightLevel'); // 🆕 §3-2 — koe:hiragana:hsWeightLevel
 
 const HS_WEIGHT_ONLY_WRONG_LEVEL = 4;
 const HS_WEIGHT_SRS_LEVEL = 5; // 🧠 간격 반복(SRS) 모드 전용 레벨 번호
@@ -716,7 +750,10 @@ function excludeVocabConfusionGroup(pool, prevJp) {
 function srsWeightedPick(list, statsObj, count) {
   const now = Date.now();
   const pool = list.map(item => {
-    const stat = statsObj[item.ch] || { srsStage: 0, lastReviewAt: null };
+    // 🆕 §3-1 이어지는 전환 — item.ch 직접 접근 대신 toGenericLearningItem(item).key로 조회.
+    // statsObj는 여전히 ch 문자열을 키로 쓰므로 동작은 이전과 100% 동일. 이 함수는 히라가나
+    // 카드찾기/쓰기 등 여러 게임이 공유하므로 전환 효과가 넓게 퍼짐(wordSrsWeightedPick과 대칭).
+    const stat = statsObj[toGenericLearningItem(item).key] || { srsStage: 0, lastReviewAt: null };
     const forget = srsForgetProbability(stat, now);
     return { item, weight: 0.05 + forget * 0.95 };
   });
@@ -911,7 +948,8 @@ function renderVocabStageOverview() {
    새로 만들지 않고, 복습 세트(startReviewSession)를 실제로 하고 싶게 만드는 행동
    유도 장치 역할만 합니다. 쓰기(hw) 채널 기준으로 삼는 이유는 computeLtmStatus()와
    동일하게 회상(직접 산출)이 재인보다 더 엄격한 증거이기 때문입니다 */
-const MISTAKE_GARDEN_LAST_TIERS_KEY = 'kotobaMistakeGardenLastTiers';
+const MISTAKE_GARDEN_LAST_TIERS_LEGACY_KEY = 'kotobaMistakeGardenLastTiers'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const MISTAKE_GARDEN_LAST_TIERS_KEY = storageKey('mistakeGardenLastTiers'); // 🆕 §3-2 — koe:hiragana:mistakeGardenLastTiers
 const MISTAKE_GARDEN_STAGES = [
   { min: 0, max: 0, emoji: '🌰', label: '씨앗' },
   { min: 1, max: 2, emoji: '🌱', label: '새싹' },
@@ -1020,8 +1058,12 @@ let reviewSessionRoundIndex = 0;
 const REVIEW_GAME_TYPES = ['hiraganaSpeed', 'hiraganaWrite', 'hiraganaRead'];
 const REVIEW_SESSION_ROUNDS = REVIEW_GAME_TYPES.length;
 
+/* 🆕 §3-1 2단계 시범 전환 — item.ch 직접 접근 대신 toGenericLearningItem(item).key로 접근.
+   반환값(문자열 배열)은 기존과 동일한 형태 그대로 유지 — 바뀐 건 HIRAGANA_LIST 원소에서 key를
+   뽑아내는 경로뿐이고, key는 ch와 항상 같은 값이라 동작은 이전과 100% 동일함(layering-roadmap.md
+   §3-1). */
 function getReviewCandidateChars() {
-  const allChars = HIRAGANA_LIST.map(item => item.ch);
+  const allChars = HIRAGANA_LIST.map(toGenericLearningItem).map(item => item.key);
   const reviewChars = allChars.filter(ch => computeLtmStatus(ch).level === 'review');
   if (reviewChars.length > 0) return reviewChars;
   // 복습이 급한 글자가 없으면 '학습 중' 글자까지 포함해서 세트를 만듭니다
@@ -1122,7 +1164,8 @@ function updateReviewSessionBanner() {
    뽑히고(복습 세트는 예외), 장기기억 현황판의 46자 그리드 자체는 그대로 전체를 보여줍니다.
    확장 기준(필요 정확도/허용 시간초과율)도 고정값이 아니라, 방금 늘린 세트가 순조로웠는지/
    버거웠는지에 따라 strictness 값으로 조금씩 더 엄격해지거나 느슨해집니다 */
-const ACTIVE_SET_STATE_KEY = 'kotobaActiveSetState';
+const ACTIVE_SET_STATE_LEGACY_KEY = 'kotobaActiveSetState'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const ACTIVE_SET_STATE_KEY = storageKey('activeSetState'); // 🆕 §3-2 — koe:hiragana:activeSetState
 const ACTIVE_SET_DEFAULT_SIZE = 5;
 const ACTIVE_SET_LOG_MAX = 40;
 const ACTIVE_SET_EVENT_LOG_MAX = 20;
@@ -1399,8 +1442,10 @@ function computeSleepConsolidationNote(ch) {
    수동적 안전장치였다면, 이건 능동적으로 먼저 다가가는 기능임.
    ============================================================ */
 
-const TODAY_LEARNED_LOG_KEY = 'kotobaTodayLearnedLog';
-const PRE_SLEEP_DISMISSED_KEY = 'kotobaPreSleepDismissedDay';
+const TODAY_LEARNED_LOG_LEGACY_KEY = 'kotobaTodayLearnedLog'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const TODAY_LEARNED_LOG_KEY = storageKey('todayLearnedLog'); // 🆕 §3-2 — koe:hiragana:todayLearnedLog
+const PRE_SLEEP_DISMISSED_LEGACY_KEY = 'kotobaPreSleepDismissedDay'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const PRE_SLEEP_DISMISSED_KEY = storageKey('preSleepDismissedDay'); // 🆕 §3-2 — koe:hiragana:preSleepDismissedDay
 const TODAY_LEARNED_LOG_MAX = 30; // 하루치 로그가 무한정 커지지 않도록 최근 N개만 유지
 let todayLearnedLog = { day: null, items: [] };
 
@@ -1444,7 +1489,8 @@ function logTodayLearned(type, key, isCorrect, extra) {
    실제로 작동하려면 전제되는 "꾸준한 접속"을 유도하는 습관 형성 장치입니다. 매일 학습이
    이뤄지게 만드는 것이 결과적으로 망각곡선 관리의 성패를 좌우합니다.
    calendarDayNumber()(수면 의존 공고화에서 만든 자정 경계 헬퍼)를 그대로 재사용합니다 */
-const STREAK_KEY = 'kotobaStreak';
+const STREAK_LEGACY_KEY = 'kotobaStreak'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const STREAK_KEY = storageKey('streak'); // 🆕 §3-2 — koe:hiragana:streak
 let streakState = { lastVisitCalendarDay: null, currentStreak: 0, longestStreak: 0 };
 
 /* localStorage에서 스트릭 상태를 불러옵니다. 값이 없거나 손상됐으면 처음 상태로 시작 */
@@ -1474,7 +1520,8 @@ function saveStreakState() {
 /* 🏅 스트릭 배지·테마 해금 상태 — earnedDays: 지금까지 도달한 STREAK_BADGES의 days 값 목록
    (한 번 얻으면 스트릭이 끊겨도 제거하지 않음). activeTheme: 지금 적용 중인 테마 이름(null이면
    기본 배색). 배지 판정과는 별개 저장소를 씀(진단 프로필/스트릭 일수와 성격이 다른 데이터) */
-const STREAK_BADGE_KEY = 'kotobaStreakBadges';
+const STREAK_BADGE_LEGACY_KEY = 'kotobaStreakBadges'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const STREAK_BADGE_KEY = storageKey('streakBadges'); // 🆕 §3-2 — koe:hiragana:streakBadges
 let streakBadgeState = { earnedDays: [], activeTheme: null };
 
 function loadStreakBadgeState() {
@@ -1673,18 +1720,22 @@ function getPreSleepHighlights(limit) {
 }
 
 /* 로그 항목 하나를 렌더링에 필요한 표시 정보(문자/발음/뜻/이모지)로 채워줍니다 */
+/* 🆕 §3-1 2단계 시범 전환(역방향 조회) — HIRAGANA_LIST.find()/DICTIONARY.find()를 직접 하는 대신
+   findGenericLearningItemByKey()를 통해서만 원본 entry를 찾음. item.type을 kind 힌트로 넘겨서
+   히라가나/어휘 중 정확히 그쪽만 찾도록 함. 이후 romaji/kr/emoji 필드도 found.meta를 거쳐서만
+   꺼내 씀(entry.romaji/entry.kr/entry.emoji 직접 접근 제거) — 동작은 이전과 100% 동일함
+   (layering-roadmap.md §3-1). */
 function enrichTodayLearnedItem(item) {
+  const found = findGenericLearningItemByKey(item.key, item.type === 'char' ? 'char' : 'word');
   if (item.type === 'char') {
-    const found = HIRAGANA_LIST.find(h => h.ch === item.key);
-    return { type: 'char', ch: item.key, romaji: found ? found.romaji : '' };
+    return { type: 'char', ch: item.key, romaji: found ? found.meta.romaji : '' };
   }
-  const dictEntry = DICTIONARY.find(d => d.jp === item.key);
   const extra = item.extra || {};
   return {
     type: 'word',
     jp: item.key,
-    kr: extra.kr || (dictEntry && dictEntry.kr) || '',
-    emoji: extra.emoji || (dictEntry && dictEntry.emoji) || '📚'
+    kr: extra.kr || (found && found.meta.kr) || '',
+    emoji: extra.emoji || (found && found.meta.emoji) || '📚'
   };
 }
 
@@ -1776,7 +1827,8 @@ const SELF_REFERENCE_EMOJI_OPTIONS = [
   { emoji: '🐶', label: '동물' },
   { emoji: '😴', label: '잘 때' }
 ];
-const SELF_REFERENCE_NOTES_KEY = 'kotobaSelfReferenceNotes';
+const SELF_REFERENCE_NOTES_LEGACY_KEY = 'kotobaSelfReferenceNotes'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const SELF_REFERENCE_NOTES_KEY = storageKey('selfReferenceNotes'); // 🆕 §3-2 — koe:hiragana:selfReferenceNotes
 
 /* 글자별 자기참조 메모(선택된 이모지)를 불러옵니다. 서버 전송 없이 기기 로컬에만 저장합니다 */
 function loadSelfReferenceNotes() {
@@ -2103,7 +2155,8 @@ function closeLtmDetail() {
 
 /* ⚡ 히라가나 스피드게임 - 문제마다 보여줄 카드 개수(정답 카드 포함, 2~4장)
    브라우저에 저장되어 다음 플레이에도 선택했던 개수가 유지됩니다 */
-const HS_CARD_COUNT_KEY = 'kotobaHsCardCount';
+const HS_CARD_COUNT_LEGACY_KEY = 'kotobaHsCardCount'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HS_CARD_COUNT_KEY = storageKey('hsCardCount'); // 🆕 §3-2 — koe:hiragana:hsCardCount
 let hsCardCount = 2;
 
 /* 🖊️ 히라가나 쓰기 스피드게임 전역 상태 (5초 안에 글자를 따라 써보는 게임) */
@@ -2133,12 +2186,14 @@ let hwGridCols = 0, hwGridRows = 0, hwTargetCount = 0;
 
 /* 🖊️ 히라가나 쓰기 스피드게임 - 글자별 성공/실패 누적 통계.
    히라가나 스피드게임(HS_STATS_KEY)과는 별도의 키에 저장되어 서로 통계가 섞이지 않습니다 */
-const HW_STATS_KEY = 'kotobaHwCharStats';
+const HW_STATS_LEGACY_KEY = 'kotobaHwCharStats'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HW_STATS_KEY = storageKey('hwCharStats'); // 🆕 §3-2 — koe:hiragana:hwCharStats
 
 /* 🖊️ 히라가나 쓰기 스피드게임 - 실패(오답) 가중치 강도. 히라가나 스피드게임과 동일한
    배수/오답만 필터 규칙(HS_WEIGHT_MULTIPLIERS, HS_WEIGHT_ONLY_WRONG_LEVEL)을 그대로
    재사용하되, 저장 키와 통계 데이터는 별도로 관리합니다 */
-const HW_WEIGHT_KEY = 'kotobaHwWeightLevel';
+const HW_WEIGHT_LEGACY_KEY = 'kotobaHwWeightLevel'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HW_WEIGHT_KEY = storageKey('hwWeightLevel'); // 🆕 §3-2 — koe:hiragana:hwWeightLevel
 
 /* 🎤 히라가나 읽기 게임 전역 상태
    히라가나 글자를 보고 소리 내어 읽으면, 음성 인식으로 맞았는지 판정하는 게임.
@@ -2167,8 +2222,10 @@ let hrAnyTimeoutThisQuestion = false; // 이번 문제에서 시도 중 시간�
 
 /* 🎤 히라가나 읽기 게임 - 글자별 성공/실패 누적 통계 및 출제 가중치.
    히라가나 쓰기(HW_STATS_KEY)와는 별도의 키에 저장되어 서로 통계가 섞이지 않습니다 */
-const HR_STATS_KEY = 'kotobaHrCharStats';
-const HR_WEIGHT_KEY = 'kotobaHrWeightLevel';
+const HR_STATS_LEGACY_KEY = 'kotobaHrCharStats'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HR_STATS_KEY = storageKey('hrCharStats'); // 🆕 §3-2 — koe:hiragana:hrCharStats
+const HR_WEIGHT_LEGACY_KEY = 'kotobaHrWeightLevel'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const HR_WEIGHT_KEY = storageKey('hrWeightLevel'); // 🆕 §3-2 — koe:hiragana:hrWeightLevel
 
 /* 🦜 섀도잉 미니게임 전역 상태 (Part 3 §2) — 원어민 음성을 듣는 즉시 거의 동시에
    따라 말하는 섀도잉은 단순 듣기보다 부호화 깊이가 크고, 리듬·억양까지 체화시켜
@@ -2676,7 +2733,7 @@ function switchMode(mode) {
     stopPronounceListening();
     stopHrListening();
     getAudioContext();
-    generateQaQuestion();
+    initQaGame(); // 🆕 §3-5 — 라운드제 전환: 바로 문제를 내지 않고 시작 화면부터 보여줌
   } else if (mode === 'lifeqa') {
     document.querySelectorAll('.tab-btn')[19].classList.add('active');
     document.getElementById('lifeqaMode').classList.add('active');
@@ -2684,7 +2741,7 @@ function switchMode(mode) {
     stopPronounceListening();
     stopHrListening();
     getAudioContext();
-    generateLifeqaQuestion();
+    initLifeqaGame(); // 🆕 §3-5(전환 2/3) — 라운드제 전환: 바로 문제를 내지 않고 시작 화면부터 보여줌
   } else if (mode === 'shop') {
     document.querySelectorAll('.tab-btn')[20].classList.add('active');
     document.getElementById('shopMode').classList.add('active');
@@ -2692,7 +2749,7 @@ function switchMode(mode) {
     stopPronounceListening();
     stopHrListening();
     getAudioContext();
-    generateShopQuestion();
+    initShopGame(); // 🆕 §3-5(전환 3/3) — 라운드제 전환: 바로 문제를 내지 않고 시작 화면부터 보여줌
   } else if (mode === 'spelling') {
     document.querySelectorAll('.tab-btn')[21].classList.add('active');
     document.getElementById('spellingMode').classList.add('active');
@@ -3015,207 +3072,71 @@ function speakWithHighlight(text, containerEl, opts){
     false면 시작화면 없이 곧바로 문제가 나오고 정답을 맞히면 바로 다음
     문제로 넘어갑니다(오답이어도 시간에 쫓기지 않고 다시 고를 수 있음).
    ============================================================ */
+/* 🆕 §3-5 게임엔진 표준화(2번 항목, 2/4) — 이제 createGenericQuizEngine(cfg) 위의 어댑터입니다.
+   아래 cfg 스키마(idPrefix/btnClass/audioBtnSuffix/timed/correctAdvanceDelay/renderQuestion/
+   renderChoiceInner/revealAnswerText/celebrate)는 quizGame/audioEmojiGame 선언부와 함께
+   한 글자도 안 바꿨습니다 — 이 함수 내부에서만 generic 엔진이 이해하는 cfg로 변환해서 넘기고,
+   반환 API도 예전 이름(init/start/generateQuiz/speakCurrent)에 맞게 다시 감싸서
+   initQuizGame()/generateAudioEmojiQuiz()/speakCurrentWord() 등 외부 호출부도 전혀 안 바뀝니다. */
 function createWordChoiceQuizGame(cfg) {
-  const P = cfg.idPrefix;
-  const el = (suffix) => document.getElementById(P + suffix);
-  const optionButtons = () => document.querySelectorAll(`#${P}Options .${cfg.btnClass}`);
+  const engine = createGenericQuizEngine({
+    idPrefix: cfg.idPrefix,
+    playScreenSuffix: 'QuestionScreen', // WordChoice 마크업은 PlayScreen이 아니라 QuestionScreen
+    btnClass: cfg.btnClass,
+    roundMode: !!cfg.timed,
+    totalQuestions: 10,
+    countdownSeconds: cfg.timed ? 5 : undefined,
+    audioBtnSuffix: cfg.audioBtnSuffix,
+    correctAdvanceDelay: cfg.correctAdvanceDelay,
+    scoreForCombo: () => 10, // WordChoice는 콤보 보너스 없이 정답당 고정 +10점
+    speak(word) { speakTTS(word.jp); }, // WordChoice는 매 문제 자동으로 발음을 들려줌(MatchReveal은 재생 버튼 필요)
+    lockPointerEvents: false, // WordChoice는 원래 정답 후에도 선택지 컨테이너를 잠그지 않음
 
-  let score = 0, combo = 0, maxCombo = 0, correctCount = 0, index = 0;
-  let currentQuestion = null, isAnswering = false;
-  let timer = null, advanceTimer = null;
+    pickItem(prevWord) {
+      const activeWords = getActiveWords();
+      const prevJp = prevWord ? prevWord.jp : null;
+      // 🧠 어휘 축 SRS/망각곡선 + 🔀 혼동 단어 인터리빙(§17) — 기존 로직 그대로
+      return wordSrsWeightedPick(excludeVocabConfusionGroup(activeWords, prevJp), 1)[0];
+    },
 
-  function speakCurrent() {
-    if (!currentQuestion) return;
-    speakTTS(currentQuestion.jp);
-  }
+    renderQuestion: cfg.renderQuestion,
 
-  function init() {
-    clearTimeout(timer); clearTimeout(advanceTimer);
-    if (cfg.timed) {
-      el('StartScreen').style.display = 'block';
-      el('QuestionScreen').style.display = 'none';
-      el('ResultScreen').style.display = 'none';
-      el('Progress').textContent = '0';
-    }
-    score = 0; combo = 0; maxCombo = 0; correctCount = 0; index = 0;
-    el('Score').textContent = '0';
-    el('Combo').textContent = '0';
-  }
-
-  function start() {
-    clearTimeout(timer); clearTimeout(advanceTimer);
-    score = 0; combo = 0; maxCombo = 0; correctCount = 0; index = 0;
-    el('Score').textContent = '0';
-    el('Combo').textContent = '0';
-
-    el('StartScreen').style.display = 'none';
-    el('ResultScreen').style.display = 'none';
-    el('QuestionScreen').style.display = 'block';
-
-    generateQuiz();
-  }
-
-  function generateQuiz() {
-    if (cfg.timed && index >= 10) {
-      showResult();
-      return;
-    }
-
-    isAnswering = false;
-    clearTimeout(timer);
-    clearTimeout(advanceTimer);
-    if (cfg.timed) el('Progress').textContent = index + 1;
-    el(cfg.audioBtnSuffix).disabled = false;
-
-    const activeWords = getActiveWords();
-    // 🧠 어휘 축 SRS/망각곡선 도입 — 순수 랜덤 대신, 잊어버릴 것 같은(=복습 시점이 다가왔거나
-    // 지난) 단어일수록 더 자주 뽑히도록 wordSrsWeightedPick()으로 교체. 히라가나 카드찾기의
-    // "잊어버릴 것 같은 글자가 더 자주 나와요" 원리를 이 공용 팩토리(퀴즈게임/오디오→이모지)에
-    // 그대로 적용함.
-    // 🔀 어휘 축 혼동 단어 인터리빙(§17) — 직전 문제(currentQuestion)와 같은 혼동군 단어는
-    // 이번 후보에서 미리 제외해, 비슷한 단어가 연달아 정답으로 나오지 않게 함.
-    const prevQuizJp = currentQuestion ? currentQuestion.jp : null;
-    const correctWord = wordSrsWeightedPick(excludeVocabConfusionGroup(activeWords, prevQuizJp), 1)[0];
-    currentQuestion = correctWord;
-
-    if (cfg.renderQuestion) cfg.renderQuestion(correctWord);
-
-    speakCurrent();
-
-    const choices = [correctWord];
-    const pool = activeWords.filter(w => w.jp !== correctWord.jp);
-    while (choices.length < 4 && pool.length > 0) {
-      const rIdx = Math.floor(Math.random() * pool.length);
-      choices.push(pool.splice(rIdx, 1)[0]);
-    }
-    choices.sort(() => Math.random() - 0.5);
-
-    const optionsContainer = el('Options');
-    optionsContainer.innerHTML = '';
-
-    choices.forEach(word => {
-      const btn = document.createElement('button');
-      btn.className = cfg.btnClass;
-      btn.dataset.jp = word.jp;
-      btn.dataset.kr = word.kr;
-      btn.innerHTML = cfg.renderChoiceInner(word);
-      btn.addEventListener('click', () => selectAnswer(btn, word));
-      optionsContainer.appendChild(btn);
-    });
-
-    if (cfg.timed) {
-      // 5초 타이머 바 애니메이션 (가득 찬 상태에서 0으로 줄어듦)
-      const fill = el('TimerFill');
-      fill.style.transition = 'none';
-      fill.style.width = '100%';
-      void fill.offsetWidth;
-      fill.style.transition = 'width 5s linear';
-      fill.style.width = '0%';
-
-      timer = setTimeout(() => {
-        timeExpired();
-      }, 5000);
-    }
-  }
-
-  function revealChoiceButtons(allButtons) {
-    if (!cfg.revealAnswerText) return;
-    allButtons.forEach(btn => {
-      btn.innerHTML = cfg.revealAnswerText(btn.dataset.jp, btn.dataset.kr);
-    });
-  }
-
-  function selectAnswer(selectedButton, word) {
-    if (isAnswering) return;
-
-    const scoreEl = el('Score');
-    const comboEl = el('Combo');
-    const allButtons = optionButtons();
-
-    if (word.jp === currentQuestion.jp) {
-      isAnswering = true;
-      clearTimeout(timer);
-      score += 10;
-      combo += 1;
-      if (combo > maxCombo) maxCombo = combo;
-      correctCount += 1;
-      scoreEl.textContent = score;
-      comboEl.textContent = combo;
-      playCorrectSound();
-      cfg.celebrate(selectedButton, currentQuestion);
-
-      el(cfg.audioBtnSuffix).disabled = true;
-      addLogChip(currentQuestion);
-      recordWordResult(currentQuestion, true);
-
-      allButtons.forEach(btn => {
-        if (btn.dataset.jp === currentQuestion.jp) {
-          btn.classList.add('correct');
-        }
-      });
-      revealChoiceButtons(allButtons);
-
-      advanceTimer = setTimeout(() => {
-        if (cfg.timed) index += 1;
-        generateQuiz();
-      }, cfg.correctAdvanceDelay);
-
-    } else {
-      selectedButton.classList.add('wrong');
-      combo = 0;
-      comboEl.textContent = combo;
-      playWrongSound();
-      recordWordResult(currentQuestion, false);
-
-      allButtons.forEach(btn => {
-        if (btn.dataset.jp === currentQuestion.jp) {
-          btn.classList.add('correct-hint');
-        }
-      });
-      revealChoiceButtons(allButtons);
-
-      setTimeout(() => {
-        selectedButton.classList.remove('wrong');
-      }, 800);
-    }
-  }
-
-  function timeExpired() {
-    if (isAnswering) return;
-    isAnswering = true;
-    clearTimeout(timer);
-    combo = 0;
-    el('Combo').textContent = combo;
-    el(cfg.audioBtnSuffix).disabled = true;
-    recordWordResult(currentQuestion, false);
-    playWrongSound();
-
-    const allButtons = optionButtons();
-    allButtons.forEach(btn => {
-      if (btn.dataset.jp === currentQuestion.jp) {
-        btn.classList.add('correct-hint');
+    buildOptions(correctWord) {
+      const activeWords = getActiveWords();
+      const choices = [correctWord];
+      const pool = activeWords.filter(w => w.jp !== correctWord.jp);
+      while (choices.length < 4 && pool.length > 0) {
+        const rIdx = Math.floor(Math.random() * pool.length);
+        choices.push(pool.splice(rIdx, 1)[0]);
       }
-    });
-    revealChoiceButtons(allButtons);
+      choices.sort(() => Math.random() - 0.5);
+      return choices.map(word => ({
+        isCorrect: word.jp === correctWord.jp,
+        datasetExtra: { jp: word.jp, kr: word.kr },
+        render(btn) { btn.innerHTML = cfg.renderChoiceInner(word); }
+      }));
+    },
 
-    advanceTimer = setTimeout(() => {
-      index += 1;
-      generateQuiz();
-    }, 1200);
-  }
+    celebrate: cfg.celebrate,
 
-  function showResult() {
-    clearTimeout(timer);
-    clearTimeout(advanceTimer);
-    el('QuestionScreen').style.display = 'none';
-    el('ResultScreen').style.display = 'block';
-    el('ResultCorrect').textContent = correctCount;
-    el('ResultMaxCombo').textContent = maxCombo;
-    el('ResultScore').textContent = score;
-    scheduleNextVocabReviewRound();
-  }
+    // 정답 확인 후 모든 선택지에 뜻을 함께 보여주는 연출(정답/오답 공통)
+    onReveal(allButtons) {
+      if (!cfg.revealAnswerText) return;
+      allButtons.forEach(btn => {
+        btn.innerHTML = cfg.revealAnswerText(btn.dataset.jp, btn.dataset.kr);
+      });
+    },
 
-  return { init, start, generateQuiz, speakCurrent };
+    // 결과 화면(라운드 모드에서만 호출됨) 표시 직후 어휘 복습 다음 라운드를 예약
+    onShowResult: () => scheduleNextVocabReviewRound()
+  });
+
+  return {
+    init: engine.init,
+    start: engine.start,
+    generateQuiz: engine.generate,
+    speakCurrent: engine.replay
+  };
 }
 
 /* 단어 퀴즈 풀기 게임 설정 — 발음을 듣고 5초 안에 알맞은 단어를 고릅니다 (총 10문제) */
@@ -3257,7 +3178,8 @@ function generateQuiz() { quizGame.generateQuiz(); }
    채워지고, 나머지 필드(청지각 변별력/작업기억 스팬/연상학습 속도)는 각각의 진단 미니게임을
    구현하는 다음 세션들에서 하나씩 채워질 예정. "1회성 확정"이 아니라 계속 갱신되는 살아있는
    프로필이라, 저장 시 기존 값을 항상 병합(merge)하고 통째로 덮어쓰지 않는다. */
-const LEARNER_PROFILE_KEY = 'kotobaLearnerProfile';
+const LEARNER_PROFILE_LEGACY_KEY = 'kotobaLearnerProfile'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const LEARNER_PROFILE_KEY = storageKey('learnerProfile'); // 🆕 §3-2 — koe:hiragana:learnerProfile
 
 function loadLearnerProfile() {
   let profile = null;
@@ -4211,7 +4133,8 @@ let wsHintToken = 0;
    진단을 아직 하지 않은 사용자(profile에 값이 없음)에게는 null을 반환해 기존 기본값(8)을
    그대로 쓰게 한다. 사용자가 버튼을 한 번이라도 직접 눌렀다면 그 이후로는 이 추천을
    다시 덮어쓰지 않도록 별도 localStorage 플래그(WS_SIZE_MANUAL_KEY)로 기억해둔다. */
-const WS_SIZE_MANUAL_KEY = 'kotobaWsSizeManual';
+const WS_SIZE_MANUAL_LEGACY_KEY = 'kotobaWsSizeManual'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const WS_SIZE_MANUAL_KEY = storageKey('wsSizeManual'); // 🆕 §3-2 — koe:hiragana:wsSizeManual
 
 function isWsSizeManuallySet(){
   try { return localStorage.getItem(WS_SIZE_MANUAL_KEY) === '1'; }
@@ -4821,111 +4744,88 @@ function selectRiddleAnswer(selectedButton, riddle){
     질문 문장(questionText)·정답 축하 이모지(celebrateEmoji)·오답 힌트
     문구(wrongHintText)만 cfg로 게임별로 분리했습니다. )
    ============================================================ */
+/* 🆕 §3-5 게임엔진 표준화 — 무한반복형(qa/lifeqa/shop)을 라운드제(WordChoice/SequencePick과 동일하게
+   StartScreen → QuestionScreen → ResultScreen, 10문제마다 결과 화면)로 통일하는 작업.
+   3개 게임(qa/lifeqa/shop)이 이 factory 하나를 공유하므로, 팩토리를 한 번에 바꾸되 실제 라운드
+   동작은 "해당 게임의 HTML에 StartScreen이 있는가"로 자동 판별하게 만들었다(isRoundMode()) —
+   이렇게 하면 이번 세션에 qa만 HTML을 바꿔도 lifeqa/shop은 StartScreen이 없어 예전처럼 무한반복으로
+   계속 정상 동작하고, 다음 세션에서 lifeqa/shop의 HTML만 추가하면 팩토리 코드를 다시 안 건드려도
+   자동으로 라운드제로 전환된다(§2-1 다중 세션 분할 원칙에 따른 안전한 점진적 전환). */
+/* 🆕 §3-5 게임엔진 표준화(2번 항목, 3/4) — 이제 createGenericQuizEngine(cfg) 위의 어댑터입니다.
+   아래 cfg 스키마(idPrefix/wrongHintText/pickItem/renderQuestionVisual/questionText/
+   buildChoiceList/celebrateEmoji)는 qaGame/lifeqaGame/shopGame 선언부와 함께 한 글자도 안
+   바꿨습니다 — 이 함수 내부에서만 generic 엔진이 이해하는 cfg로 변환해서 넘기고, 반환 API도
+   예전 이름(init/start/generate/replay/clearPrevious/cancelAdvance)에 맞게 그대로 유지합니다.
+   previousKey(직전 정답의 key)는 cfg.pickItem이 {item,key} 쌍을 돌려주는 예전 방식 그대로라,
+   generic 엔진에 넘기지 않고 이 어댑터 클로저 안에서 자체적으로 추적합니다(clearPrevious()도
+   여기서 그냥 이 변수만 null로 되돌리면 됨 — generic 엔진 지원 불필요). */
 function createUnlimitedChoiceQuizGame(cfg) {
-  const P = cfg.idPrefix;
-  const el = (suffix) => document.getElementById(P + suffix);
-  const questionEl = () => el('QuestionJp');
+  let previousKey = null;
 
-  let score = 0, combo = 0, currentItem = null, previousKey = null, isAnswering = false;
-  let advanceTimer = null;
+  const engine = createGenericQuizEngine({
+    idPrefix: cfg.idPrefix,
+    playScreenSuffix: 'QuestionScreen', // WordChoice와 동일한 마크업(PlayScreen 아님)
+    optionsContainerSuffix: 'Choices', // qa/lifeqa/shop 마크업은 Options가 아니라 Choices
+    btnClass: 'qa-choice-btn',
+    scoreForCombo: () => 10, // 콤보 보너스 없이 정답당 고정 +10점
+    totalQuestions: 10,
+    correctAdvanceDelay: 2000,
+    lockPointerEvents: false, // 원래 정답 후에도 선택지 컨테이너를 잠그지 않음
+    revealedClass: 'revealed', // 정답 시 컨테이너에 'revealed' 클래스 추가(문제 시작마다 제거)
+    skipStats: true, // 이 게임군은 원래 addLogChip/recordWordResult(어휘 통계)를 안 건드림
 
-  function clearPrevious() { previousKey = null; }
+    pickItem() {
+      const picked = cfg.pickItem(previousKey);
+      previousKey = picked.key;
+      return picked.item;
+    },
 
-  function cancelAdvance() { clearTimeout(advanceTimer); }
+    renderQuestion: cfg.renderQuestionVisual,
 
-  function replay() {
-    if (!currentItem) return;
-    speakWithHighlight(cfg.questionText(currentItem), questionEl(), {rate: 0.75});
-  }
+    // 질문 문장을 하이라이트하며 읽어줌(매 문제 자동 + replay() 둘 다 이 함수를 씀)
+    speak(item) {
+      speakWithHighlight(cfg.questionText(item), document.getElementById(cfg.idPrefix + 'QuestionJp'), { rate: 0.75 });
+    },
 
-  function generate() {
-    clearTimeout(advanceTimer);
-    isAnswering = false;
-    const feedbackEl = el('Feedback');
-    if (feedbackEl) feedbackEl.textContent = '';
+    buildOptions(item) {
+      const choices = cfg.buildChoiceList(item);
+      return choices.map((choice, idx) => ({
+        isCorrect: choice.isCorrect,
+        jp: choice.jp,
+        kr: choice.kr,
+        render(btn) {
+          btn.innerHTML = `
+            <span class="qa-choice-num">${idx + 1}</span>
+            <span class="qa-choice-text">
+              <span class="qa-choice-jp">${choice.jp}</span>
+              <span class="qa-choice-kr">${choice.kr}</span>
+            </span>
+          `;
+        }
+      }));
+    },
 
-    const picked = cfg.pickItem(previousKey);
-    currentItem = picked.item;
-    previousKey = picked.key;
-
-    cfg.renderQuestionVisual(currentItem);
-    speakWithHighlight(cfg.questionText(currentItem), questionEl(), {rate: 0.75});
-
-    buildChoices();
-  }
-
-  function buildChoices() {
-    const container = el('Choices');
-    container.innerHTML = '';
-    container.classList.remove('revealed');
-    if (!currentItem) return;
-
-    const choices = cfg.buildChoiceList(currentItem);
-
-    choices.forEach((choice, idx) => {
-      const btn = document.createElement('button');
-      btn.className = 'qa-choice-btn';
-      btn.dataset.correct = choice.isCorrect ? '1' : '0';
-      btn.innerHTML = `
-        <span class="qa-choice-num">${idx + 1}</span>
-        <span class="qa-choice-text">
-          <span class="qa-choice-jp">${choice.jp}</span>
-          <span class="qa-choice-kr">${choice.kr}</span>
-        </span>
-      `;
-      btn.addEventListener('click', () => selectChoice(btn, choice));
-      container.appendChild(btn);
-    });
-  }
-
-  function selectChoice(selectedButton, choice) {
-    if (isAnswering || !currentItem) return;
-
-    const scoreEl = el('Score');
-    const comboEl = el('Combo');
-    const feedbackEl = el('Feedback');
-    const allButtons = document.querySelectorAll(`#${P}Choices .qa-choice-btn`);
-
-    if (choice.isCorrect) {
-      isAnswering = true;
-      score += 10;
-      combo += 1;
-      scoreEl.textContent = score;
-      comboEl.textContent = combo;
-      // 정답 선택지의 jp/kr 문구를 그대로 피드백 문구로 재사용합니다
-      feedbackEl.textContent = `정답이에요! 🎉 ${choice.jp}(${choice.kr})`;
-      playCorrectSound();
+    celebrate(selectedButton, currentItem, choice) {
       celebrateElement(selectedButton);
       celebrateFullscreenEmoji(cfg.celebrateEmoji(currentItem, choice));
-      speakTTS(choice.jp);
+    },
 
-      allButtons.forEach(btn => {
-        if (btn.dataset.correct === '1') btn.classList.add('correct');
-      });
-      el('Choices').classList.add('revealed');
+    onCorrectSpeak(choice) { speakTTS(choice.jp); },
 
-      advanceTimer = setTimeout(() => {
-        generate();
-      }, 2000);
-
-    } else {
-      selectedButton.classList.add('wrong');
-      combo = 0;
-      comboEl.textContent = combo;
-      playWrongSound();
-      feedbackEl.textContent = wrongFeedbackText(cfg.wrongHintText);
-
-      allButtons.forEach(btn => {
-        if (btn.dataset.correct === '1') btn.classList.add('correct-hint');
-      });
-
-      setTimeout(() => {
-        selectedButton.classList.remove('wrong');
-      }, 800);
+    feedbackText(choice, isCorrect) {
+      if (isCorrect) return `정답이에요! 🎉 ${choice.jp}(${choice.kr})`;
+      return wrongFeedbackText(cfg.wrongHintText);
     }
-  }
+  });
 
-  return { generate, replay, clearPrevious, cancelAdvance };
+  return {
+    init: engine.init,
+    start: engine.start,
+    generate: engine.generate,
+    replay: engine.replay,
+    clearPrevious() { previousKey = null; },
+    cancelAdvance: engine.cancelAdvance
+  };
 }
 
 /* ❓ '질문에 답하기' 게임 설정 — 이모지를 보여주며 히라가나 질문을 음성으로 들려주고,
@@ -4964,6 +4864,8 @@ const qaGame = createUnlimitedChoiceQuizGame({
 });
 
 function generateQaQuestion() { qaGame.generate(); }
+function initQaGame() { qaGame.init(); } // 🆕 §3-5 — 라운드제 전환: 시작 화면 진입
+function startQaGame() { qaGame.start(); } // 🆕 §3-5 — "게임 시작하기"/"다시 하기" 버튼
 /* 질문 음성을 다시 들려줍니다 (화면에 이미 그려진 글자를 다시 하이라이트하며 읽어줌) */
 function replayQaQuestion() { qaGame.replay(); }
 
@@ -5018,6 +4920,8 @@ function changeLifeqaTopic(topic){
 }
 
 function generateLifeqaQuestion() { lifeqaGame.generate(); }
+function initLifeqaGame() { lifeqaGame.init(); } // 🆕 §3-5(전환 2/3) — 라운드제 전환: 시작 화면 진입
+function startLifeqaGame() { lifeqaGame.start(); } // 🆕 §3-5(전환 2/3) — "게임 시작하기"/"다시 하기" 버튼
 /* 질문 음성을 다시 들려줍니다 */
 function replayLifeqaQuestion() { lifeqaGame.replay(); }
 
@@ -5085,6 +4989,8 @@ const shopGame = createUnlimitedChoiceQuizGame({
 });
 
 function generateShopQuestion() { shopGame.generate(); }
+function initShopGame() { shopGame.init(); } // 🆕 §3-5(전환 3/3) — 라운드제 전환: 시작 화면 진입
+function startShopGame() { shopGame.start(); } // 🆕 §3-5(전환 3/3) — "게임 시작하기"/"다시 하기" 버튼
 /* 질문 음성을 다시 들려줍니다 */
 function replayShopQuestion() { shopGame.replay(); }
 
@@ -7059,7 +6965,9 @@ function createHiraganaStatsEngine(cfg) {
     }
     if (weightLevel === HS_WEIGHT_ONLY_WRONG_LEVEL) {
       const onlyWrongList = activeList.filter(item => {
-        const stat = charStats[item.ch] || { correct: 0, wrong: 0 };
+        // 🆕 §3-1 이어지는 전환 — item.ch 직접 접근 대신 toGenericLearningItem(item).key로 조회.
+        // charStats는 여전히 ch 문자열을 키로 쓰므로 동작은 이전과 100% 동일함.
+        const stat = charStats[toGenericLearningItem(item).key] || { correct: 0, wrong: 0 };
         const total = stat.correct + stat.wrong;
         return total > 0 && (stat.wrong / total) >= 0.30;
       });
@@ -7078,7 +6986,8 @@ function createHiraganaStatsEngine(cfg) {
 
     const multiplier = HS_WEIGHT_MULTIPLIERS[weightLevel] !== undefined ? HS_WEIGHT_MULTIPLIERS[weightLevel] : 2;
     const pool = activeList.map(item => {
-      const stat = charStats[item.ch] || { correct: 0, wrong: 0 };
+      // 🆕 §3-1 이어지는 전환 — item.ch 직접 접근 대신 toGenericLearningItem(item).key로 조회.
+      const stat = charStats[toGenericLearningItem(item).key] || { correct: 0, wrong: 0 };
       return { item, weight: 1 + stat.wrong * multiplier };
     });
     const result = [];
@@ -8032,120 +7941,250 @@ function wmShowResult() {
    게임별 콜백으로 분리하고 나머지 흐름은 엔진이 공용으로 처리합니다.
    id 규칙: #{idPrefix}StartScreen/PlayScreen/ResultScreen, #{idPrefix}Score/Combo/Progress,
    #{idPrefix}Options, #{idPrefix}ResultCorrect/ResultMaxCombo/ResultScore */
-function createMatchRevealQuizGame(cfg) {
+/* 🆕 §3-5 게임엔진 표준화(2번 항목, 1/4 — MatchReveal 전환 시) — 이 함수 본체를 그대로
+   createGenericQuizEngine(cfg)로 옮기고, createMatchRevealQuizGame(cfg)는 그 위의 얇은 래퍼로
+   남겼습니다(외부 호출부인 ewGame/silGame 선언과 initEawaseGame() 등은 전혀 안 바꿔도 되도록
+   함수 시그니처 유지).
+   🆕 §3-5(2번 항목, 2/4 — WordChoice 전환 시) — cfg에 선택적 훅을 추가해 두 번째 factory인
+   `createWordChoiceQuizGame`도 이 위에서 돌아가도록 확장했습니다.
+   🆕 §3-5(2번 항목, 3/4 — Unlimited 전환 시) — 세 번째 factory인 `createUnlimitedChoiceQuizGame`
+   (qa/lifeqa/shop 공유)도 옮기면서 훅을 더 추가했습니다. 아래 훅은 모두 옵션이며, 지정하지
+   않으면 MatchReveal(ewGame/silGame)이 쓰던 기존 동작을 그대로 유지합니다:
+   - playScreenSuffix(기본 'PlayScreen'): 문제 화면 id 접미사. WordChoice/Unlimited는 'QuestionScreen'.
+   - btnClass(기본 'quiz-btn'): 선택지 버튼 CSS 클래스.
+   - optionsContainerSuffix(기본 'Options'): 선택지를 담는 컨테이너 id 접미사. Unlimited는 'Choices'.
+   - roundMode(기본 true): false면 시작화면·Progress·결과화면 없이 곧바로/계속 문제를 냄
+     (오디오→이모지 연습 모드용).
+   - countdownSeconds(기본 없음): 지정하면 문제마다 그 초만큼 카운트다운 타이머(#{P}TimerFill
+     필요)가 돌고, 시간 초과 시 오답 처리 후 자동으로 다음 문제로 넘어감.
+   - pickItem(prevWord)(기본: cfg.words에서 직전 단어만 제외한 랜덤): 다음 문제 단어를 고르는
+     로직을 완전히 대체. WordChoice는 SRS 가중치+혼동군 제외, Unlimited는 어댑터가 자체
+     추적하는 previousKey를 넘겨줌.
+   - buildOptions(word)가 돌려주는 각 선택지는 {isCorrect, label} 대신 더 풍부하게
+     {isCorrect, render(btn), datasetExtra}도 지원(label 없으면 render(btn)로 버튼 내용을
+     직접 채움, datasetExtra는 btn.dataset에 추가 항목을 심어줌).
+   - celebrate(btn, word, choice)(기본: celebrateCorrect(selectedButton, word)): 정답 연출.
+     3번째 인자 choice는 Unlimited처럼 선택지별 축하 연출이 필요할 때만 사용.
+   - onReveal(allButtons, isCorrect, container)(기본 없음): 정답 공개 후 선택지들을 추가로
+     다시 그리거나(WordChoice) 컨테이너에 클래스를 더 붙이고 싶을 때(Unlimited).
+   - audioBtnSuffix(기본 없음): 지정하면 매 문제 시작 시 활성화, 정답/시간초과 시 비활성화.
+   - correctAdvanceDelay(기본 0): onCorrectReveal을 안 쓰는 경우, 정답 후 다음 문제로 넘어가기까지
+     대기시간(ms).
+   - scoreForCombo(combo)(기본: MatchReveal 콤보 보너스 `10+(combo-1)*5`): 정답 점수 계산식.
+   - onShowResult()(기본 없음): 결과 화면 표시 직후 추가로 부를 것(WordChoice의 어휘 복습 다음
+     라운드 예약용).
+   - speak(word)(기본 없음): 지정하면 매 문제 렌더링 직후 자동으로 이 함수로 발음을 들려주고,
+     replay()도 기본 speakTTS 대신 이 함수를 씀(WordChoice는 단순 TTS, Unlimited는 하이라이트
+     낭독). 지정 안 하면 MatchReveal처럼 재생 버튼을 눌러야만 재생됨(기존 동작 유지).
+   - lockPointerEvents(기본 true): 정답 시 선택지 컨테이너의 pointer-events를 꺼버릴지. WordChoice/
+     Unlimited는 원래 이렇게 안 했으므로 false로 지정.
+   - feedbackText(choice, isCorrect)(기본 없음): #{P}Feedback 요소가 있으면 그 문구를 채움
+     (Unlimited 전용, 정답/오답 모두에서 매 문제 시작 시 비워짐).
+   - onCorrectSpeak(choice)(기본 없음): 정답 처리 후 추가로 음성을 들려주고 싶을 때(Unlimited는
+     선택한 정답 문장을 다시 읽어줌).
+   - revealedClass(기본 없음): 지정하면 정답 시 선택지 컨테이너에 이 클래스를 추가(문제 시작마다
+     제거) — Unlimited의 'revealed' 연출용.
+   - skipStats(기본 false): true면 addLogChip/recordWordResult를 아예 안 부름(Unlimited는 원래
+     어휘 통계를 안 건드리는 게임이라 true로 지정).
+   함수 시그니처(cfg.idPrefix/words/totalQuestions/renderQuestion/buildOptions/onCorrectReveal)는
+   그대로 유지되므로 ewGame/silGame은 이번에도 한 글자도 안 바뀝니다. */
+function createGenericQuizEngine(cfg) {
   const P = cfg.idPrefix;
   const el = (suffix) => document.getElementById(P + suffix);
+  const btnClass = cfg.btnClass || 'quiz-btn';
+  const playScreenSuffix = cfg.playScreenSuffix || 'PlayScreen';
+  const containerSuffix = cfg.optionsContainerSuffix || 'Options';
+  const roundMode = cfg.roundMode !== false;
 
   let score = 0, combo = 0, maxCombo = 0, correctCount = 0, questionIndex = 0;
-  let currentWord = null, answered = false, advanceTimer = null;
+  let currentWord = null, answered = false, advanceTimer = null, countdownTimer = null;
 
   function resetState() {
     clearTimeout(advanceTimer);
+    clearTimeout(countdownTimer);
     score = 0; combo = 0; maxCombo = 0; correctCount = 0; questionIndex = 0; currentWord = null;
     el('Score').textContent = '0';
     el('Combo').textContent = '0';
   }
 
-  function cancelAdvance() { clearTimeout(advanceTimer); }
+  function cancelAdvance() { clearTimeout(advanceTimer); clearTimeout(countdownTimer); }
 
   function init() {
     resetState();
-    el('StartScreen').style.display = 'block';
-    el('PlayScreen').style.display = 'none';
-    el('ResultScreen').style.display = 'none';
-    const progressEl = el('Progress');
-    if (progressEl) progressEl.textContent = '0';
+    if (roundMode) {
+      el('StartScreen').style.display = 'block';
+      el(playScreenSuffix).style.display = 'none';
+      el('ResultScreen').style.display = 'none';
+      const progressEl = el('Progress');
+      if (progressEl) progressEl.textContent = '0';
+    }
   }
 
   function start() {
     resetState();
-    el('StartScreen').style.display = 'none';
-    el('ResultScreen').style.display = 'none';
+    if (roundMode) {
+      el('StartScreen').style.display = 'none';
+      el('ResultScreen').style.display = 'none';
+    }
     showQuestion();
   }
 
   function pickWord() {
+    if (cfg.pickItem) return cfg.pickItem(currentWord);
     let pool = cfg.words;
     if (currentWord) pool = cfg.words.filter(w => w.jp !== currentWord.jp);
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function showQuestion() {
-    if (questionIndex >= cfg.totalQuestions) {
+    if (roundMode && questionIndex >= cfg.totalQuestions) {
       showResult();
       return;
     }
 
     answered = false;
     clearTimeout(advanceTimer);
+    clearTimeout(countdownTimer);
 
-    const progressEl = el('Progress');
-    if (progressEl) progressEl.textContent = questionIndex + 1;
-    el('StartScreen').style.display = 'none';
-    el('ResultScreen').style.display = 'none';
-    el('PlayScreen').style.display = 'block';
+    if (roundMode) {
+      const progressEl = el('Progress');
+      if (progressEl) progressEl.textContent = questionIndex + 1;
+      el('StartScreen').style.display = 'none';
+      el('ResultScreen').style.display = 'none';
+      el(playScreenSuffix).style.display = 'block';
+    }
+    if (cfg.audioBtnSuffix) {
+      const audioBtn = el(cfg.audioBtnSuffix);
+      if (audioBtn) audioBtn.disabled = false;
+    }
+    const feedbackEl = el('Feedback');
+    if (feedbackEl) feedbackEl.textContent = '';
 
     const word = pickWord();
     currentWord = word;
 
-    cfg.renderQuestion(word);
+    if (cfg.renderQuestion) cfg.renderQuestion(word);
+    if (cfg.speak) cfg.speak(word);
 
     const options = cfg.buildOptions(word);
-    const container = el('Options');
+    const container = el(containerSuffix);
     container.innerHTML = '';
     container.style.pointerEvents = 'auto';
+    if (cfg.revealedClass) container.classList.remove(cfg.revealedClass);
     options.forEach(opt => {
       const btn = document.createElement('button');
-      btn.className = 'quiz-btn';
+      btn.className = btnClass;
       btn.dataset.correct = opt.isCorrect ? '1' : '0';
-      btn.textContent = opt.label;
+      if (opt.datasetExtra) {
+        Object.keys(opt.datasetExtra).forEach(k => { btn.dataset[k] = opt.datasetExtra[k]; });
+      }
+      if (opt.render) opt.render(btn); else btn.textContent = opt.label;
       btn.addEventListener('click', () => selectOption(btn, opt));
       container.appendChild(btn);
     });
+
+    if (cfg.countdownSeconds) {
+      const fill = el('TimerFill');
+      fill.style.transition = 'none';
+      fill.style.width = '100%';
+      void fill.offsetWidth;
+      fill.style.transition = `width ${cfg.countdownSeconds}s linear`;
+      fill.style.width = '0%';
+      countdownTimer = setTimeout(() => { timeExpired(); }, cfg.countdownSeconds * 1000);
+    }
   }
 
   function replay() {
-    if (currentWord) speakTTS(currentWord.jp);
+    if (!currentWord) return;
+    if (cfg.speak) cfg.speak(currentWord);
+    else speakTTS(currentWord.jp);
+  }
+
+  function timeExpired() {
+    if (answered) return;
+    answered = true;
+    clearTimeout(countdownTimer);
+    combo = 0;
+    el('Combo').textContent = combo;
+    if (cfg.audioBtnSuffix) {
+      const audioBtn = el(cfg.audioBtnSuffix);
+      if (audioBtn) audioBtn.disabled = true;
+    }
+    if (!cfg.skipStats) recordWordResult(currentWord, false);
+    playWrongSound();
+
+    const allButtons = document.querySelectorAll(`#${P}${containerSuffix} .${btnClass}`);
+    allButtons.forEach(btn => {
+      if (btn.dataset.correct === '1') btn.classList.add('correct-hint');
+    });
+    if (cfg.onReveal) cfg.onReveal(allButtons, false, el(containerSuffix));
+
+    advanceTimer = setTimeout(() => {
+      questionIndex += 1;
+      showQuestion();
+    }, 1200);
   }
 
   function selectOption(selectedButton, choice) {
     if (answered) return;
-    const allButtons = document.querySelectorAll(`#${P}Options .quiz-btn`);
+    const container = el(containerSuffix);
+    const allButtons = document.querySelectorAll(`#${P}${containerSuffix} .${btnClass}`);
+    const feedbackEl = el('Feedback');
 
     if (choice.isCorrect) {
       answered = true;
-      el('Options').style.pointerEvents = 'none';
+      clearTimeout(countdownTimer);
+      if (cfg.lockPointerEvents !== false) container.style.pointerEvents = 'none';
 
       combo += 1;
       if (combo > maxCombo) maxCombo = combo;
-      const comboBonus = (combo - 1) * 5;
-      score += 10 + comboBonus;
+      score += cfg.scoreForCombo ? cfg.scoreForCombo(combo) : (10 + (combo - 1) * 5);
       correctCount += 1;
       el('Score').textContent = score;
       el('Combo').textContent = combo;
+      if (feedbackEl && cfg.feedbackText) feedbackEl.textContent = cfg.feedbackText(choice, true);
 
       selectedButton.classList.add('correct');
       playCorrectSound();
-      celebrateCorrect(selectedButton, currentWord);
-      addLogChip(currentWord);
-      recordWordResult(currentWord, true);
+      if (cfg.celebrate) cfg.celebrate(selectedButton, currentWord, choice);
+      else celebrateCorrect(selectedButton, currentWord);
+      if (cfg.onCorrectSpeak) cfg.onCorrectSpeak(choice);
+      if (cfg.audioBtnSuffix) {
+        const audioBtn = el(cfg.audioBtnSuffix);
+        if (audioBtn) audioBtn.disabled = true;
+      }
+      if (!cfg.skipStats) {
+        addLogChip(currentWord);
+        recordWordResult(currentWord, true);
+      }
+      if (cfg.revealedClass) container.classList.add(cfg.revealedClass);
+      if (cfg.onReveal) cfg.onReveal(allButtons, true, container);
 
-      cfg.onCorrectReveal(currentWord, () => {
+      if (cfg.onCorrectReveal) {
+        cfg.onCorrectReveal(currentWord, () => {
+          advanceTimer = setTimeout(() => {
+            questionIndex += 1;
+            showQuestion();
+          }, 0);
+        });
+      } else {
         advanceTimer = setTimeout(() => {
           questionIndex += 1;
           showQuestion();
-        }, 0);
-      });
+        }, cfg.correctAdvanceDelay || 0);
+      }
     } else {
       selectedButton.classList.add('wrong');
       combo = 0;
       el('Combo').textContent = combo;
       playWrongSound();
-      recordWordResult(currentWord, false);
+      if (feedbackEl && cfg.feedbackText) feedbackEl.textContent = cfg.feedbackText(choice, false);
+      if (!cfg.skipStats) recordWordResult(currentWord, false);
 
       allButtons.forEach(btn => {
         if (btn.dataset.correct === '1') btn.classList.add('correct-hint');
       });
+      if (cfg.onReveal) cfg.onReveal(allButtons, false, container);
 
       setTimeout(() => {
         selectedButton.classList.remove('wrong');
@@ -8154,14 +8193,24 @@ function createMatchRevealQuizGame(cfg) {
   }
 
   function showResult() {
-    el('PlayScreen').style.display = 'none';
+    clearTimeout(advanceTimer);
+    clearTimeout(countdownTimer);
+    el(playScreenSuffix).style.display = 'none';
     el('ResultScreen').style.display = 'block';
     el('ResultCorrect').textContent = correctCount;
     el('ResultMaxCombo').textContent = maxCombo;
     el('ResultScore').textContent = score;
+    if (cfg.onShowResult) cfg.onShowResult();
   }
 
-  return { init, start, replay, cancelAdvance };
+  return { init, start, generate: showQuestion, replay, cancelAdvance };
+}
+
+/* 🆕 §3-5(2번 항목, 1/4) — 이제 createGenericQuizEngine(cfg)의 얇은 래퍼. ewGame/silGame
+   선언부(아래)와 initEawaseGame() 등 외부 호출부는 이 함수 시그니처가 그대로 유지되므로
+   전혀 안 바뀌어도 됨(회귀 방지). */
+function createMatchRevealQuizGame(cfg) {
+  return createGenericQuizEngine(cfg);
 }
 
 /* 🧩 그림 반쪽 맞추기 게임 설정 — 그림(이모지)과 단어의 앞쪽 절반만 먼저 보여주고,
@@ -8916,13 +8965,17 @@ function addLogChip(word) {
 /* 📊 단어별 정답/오답 통계 유틸 함수 (모든 게임 모드 공통 누적) — localStorage에 저장되어
    다음 방문에도 유지됨. loadWordStats()/saveWordStats()가 실제 입출력을 담당함 */
 function recordWordResult(word, isCorrect) {
-  if (!word || !word.jp) return;
-  if (!wordStats[word.jp]) wordStats[word.jp] = { correct: 0, wrong: 0, channels: {} };
-  if (!wordStats[word.jp].channels) wordStats[word.jp].channels = {};
+  // 🆕 §3-1 이어지는 전환 — word.jp를 여러 번 직접 읽는 대신, 어댑터로 key를 한 번만 구해
+  // 재사용함. genericItem.key는 항상 원본 word.jp와 같은 값이라 동작은 이전과 100% 동일.
+  const genericItem = word ? toGenericLearningItem(word) : null;
+  const wordKey = genericItem && genericItem.key;
+  if (!wordKey) return;
+  if (!wordStats[wordKey]) wordStats[wordKey] = { correct: 0, wrong: 0, channels: {} };
+  if (!wordStats[wordKey].channels) wordStats[wordKey].channels = {};
   if (isCorrect) {
-    wordStats[word.jp].correct += 1;
+    wordStats[wordKey].correct += 1;
   } else {
-    wordStats[word.jp].wrong += 1;
+    wordStats[wordKey].wrong += 1;
   }
 
   // 🪜 §2 단계 판정 일반화 — 지금 실행 중인 게임 모드(currentGameMode)를 GAME_STAGE_MAP으로
@@ -8930,18 +8983,18 @@ function recordWordResult(word, isCorrect) {
   // A단계(듣기 전용) 게임이나 매핑에 없는 모드는 정오답 채널 기록 대상이 아니라 건너뜀.
   const stage = getGameStage(currentGameMode);
   if (stage === 'B' || stage === 'C' || stage === 'D') {
-    if (!wordStats[word.jp].channels[stage]) wordStats[word.jp].channels[stage] = { correct: 0, wrong: 0 };
-    if (isCorrect) wordStats[word.jp].channels[stage].correct += 1;
-    else wordStats[word.jp].channels[stage].wrong += 1;
+    if (!wordStats[wordKey].channels[stage]) wordStats[wordKey].channels[stage] = { correct: 0, wrong: 0 };
+    if (isCorrect) wordStats[wordKey].channels[stage].correct += 1;
+    else wordStats[wordKey].channels[stage].wrong += 1;
     saveLastVocabModality(currentGameMode); // 🔀 어휘 축 인출 단서 다변화용 — 방금 쓴 모달리티를 기록
   }
 
   // 🧠 어휘 축 SRS/망각곡선 도입 — 히라가나 축(hsStats/hwStats/hrStats)과 완전히 동일한
-  // srsUpdateStat()을 그대로 재사용함. wordStats[jp]에는 채널별(B/C/D) 정오답과는 별개로
+  // srsUpdateStat()을 그대로 재사용함. wordStats[key]에는 채널별(B/C/D) 정오답과는 별개로
   // "이 단어 전체"를 대표하는 srsStage 하나만 둠(히라가나처럼 게임별로 별도 엔진을 두지 않고,
   // 어느 게임에서 맞히든 같은 단어면 같은 SRS 시계를 공유). srsUpdateStat이 stat.srsStage가
   // 숫자가 아니면 0으로 채워주므로, 기존 저장 데이터(srsStage 없음)도 방어 코드 없이 자연히 처리됨.
-  srsUpdateStat(wordStats[word.jp], isCorrect);
+  srsUpdateStat(wordStats[wordKey], isCorrect);
 
   saveWordStats();
   updateGalleryCardRate(word.jp);
@@ -8973,7 +9026,10 @@ function saveWordStats() {
 function wordSrsWeightedPick(words, count) {
   const now = Date.now();
   const pool = words.map(item => {
-    const stat = wordStats[item.jp] || { srsStage: 0, lastReviewAt: null };
+    // 🆕 §3-1 이어지는 전환 — item.jp 직접 접근 대신 toGenericLearningItem(item).key로 조회.
+    // wordStats는 여전히 jp 문자열을 키로 쓰므로 동작은 이전과 100% 동일하고, 이 함수는
+    // 문장/합성어·섀도잉·수수께끼·낱말찾기 등 여러 게임이 공유하므로 전환 효과가 넓게 퍼짐.
+    const stat = wordStats[toGenericLearningItem(item).key] || { srsStage: 0, lastReviewAt: null };
     const forget = srsForgetProbability(stat, now);
     return { item, weight: 0.05 + forget * 0.95 };
   });
@@ -9098,17 +9154,21 @@ const VOCAB_REVIEW_SESSION_ROUNDS = VOCAB_REVIEW_GAME_TYPES.length;
    아직 재인(B)~회상(C) 단계라 망각확률 계산 자체가 안정적이지 않은 경우) 아직 발화(D)까지
    못 간 B/C 단계 단어로 대신 채움 — 히라가나 복습 세트의 "복습 필요 없으면 학습 중으로 대체"
    원칙과 동일함 */
+/* 🆕 §3-1 2단계 시범 전환 — w.jp 직접 접근 대신 toGenericLearningItem(w).key를 통해서만 접근.
+   반환값(words 배열)은 기존과 완전히 동일한 DICTIONARY 원소 형태를 그대로 유지함(다른 화면들이
+   w.kr/w.emoji 등을 그대로 쓰고 있어서 반환 형태는 바꾸지 않음 — 바뀐 건 통계 조회에 쓰는 키
+   접근 경로뿐). key는 jp와 항상 같은 값이라 동작은 이전과 100% 동일함(layering-roadmap.md §3-1). */
 function getVocabReviewCandidateWords() {
   const words = getActiveWords();
   const now = Date.now();
   const dueWords = words.filter(w => {
-    const stat = wordStats[w.jp];
+    const stat = wordStats[toGenericLearningItem(w).key];
     if (!stat) return false;
     return srsForgetProbability(stat, now) >= 0.5;
   });
   if (dueWords.length > 0) return dueWords;
   return words.filter(w => {
-    const stage = computeWordGameStage(w.jp);
+    const stage = computeWordGameStage(toGenericLearningItem(w).key);
     return stage === 'B' || stage === 'C';
   });
 }
@@ -11837,7 +11897,8 @@ function normalizeRoleplayJp(text){
 /* 🎭 시나리오별 완료 기록 — 시나리오 목록 화면에서 "이미 몇 번 해봤는지·최고 기록"을
    보여주기 위한 최소한의 진행 상황 저장소. §3 오케스트레이터와는 아직 연동하지 않고
    (다음 세션 후보로 남겨둠) 이 게임 화면 안에서만 참고용으로 씀. */
-const ROLEPLAY_COMPLETIONS_KEY = 'kotobaRoleplayCompletions';
+const ROLEPLAY_COMPLETIONS_LEGACY_KEY = 'kotobaRoleplayCompletions'; // 🆕 §3-2 — 마이그레이션용 구 키, 삭제하지 말 것
+const ROLEPLAY_COMPLETIONS_KEY = storageKey('roleplayCompletions'); // 🆕 §3-2 — koe:hiragana:roleplayCompletions
 let roleplayCompletions = {}; // { [scenarioId]: { timesCompleted, bestAttempts } }
 
 function loadRoleplayCompletions() {
@@ -12228,11 +12289,15 @@ function computeCharGameStage(ch) {
 }
 
 /* 활성 학습 세트(getActiveCharList) 글자들이 지금 A~E에 얼마나 분포돼 있는지 집계 */
+/* 🆕 §3-1 2단계 시범 전환 — HIRAGANA_LIST 원소를 직접(entry.ch) 읽지 않고 toGenericLearningItem()
+   어댑터를 거쳐서만 접근하도록 바꿈. item.key는 entry.ch와 항상 같은 값이라 동작은 이전과 동일함
+   (layering-roadmap.md §3-1 참고). 이 함수 내부에서는 이제 어댑터 경로만 쓰고, entry.ch 직접
+   접근은 남겨두지 않음. */
 function computeActiveSetStageDistribution() {
-  const chars = getActiveCharList().map(item => item.ch);
+  const items = getActiveCharList().map(toGenericLearningItem);
   const dist = { A: 0, B: 0, C: 0, D: 0, E: 0 };
-  chars.forEach(ch => { dist[computeCharGameStage(ch)] += 1; });
-  return { dist, total: chars.length };
+  items.forEach(item => { dist[computeCharGameStage(item.key)] += 1; });
+  return { dist, total: items.length };
 }
 
 /* 히라가나 축(computeActiveSetStageDistribution)과 어휘 축(computeVocabStageDistribution)
@@ -12597,8 +12662,61 @@ document.addEventListener('fullscreenchange', () => {
   }
 });
 
+/* Layer 1 데이터 계약 어댑터(data.js의 toGenericLearningItem) 자가 점검 — layering-roadmap.md §3-1
+   HIRAGANA_LIST/DICTIONARY 원본과 어댑터가 변환한 결과가 1:1로 정확히 대응하는지(개수 일치,
+   key가 원본 식별 필드와 동일, key 중복 없음)만 확인함. 화면이나 localStorage에는 전혀 영향을
+   주지 않고 console에만 결과를 남기는 임시 점검용 — §3-1 1단계 구현이 맞는지 개발자 도구
+   콘솔에서 눈으로 확인하기 위한 것으로, 실제 게임/통계 로직에는 아직 연결돼 있지 않음. */
+function selfCheckGenericLearningItemAdapter() {
+  try {
+    const hiraItems = HIRAGANA_LIST.map(toGenericLearningItem);
+    const hiraCountOk = hiraItems.length === HIRAGANA_LIST.length;
+    const hiraKeyOk = hiraItems.every((item, i) => item && item.key === HIRAGANA_LIST[i].ch);
+    const hiraKeySet = new Set(hiraItems.map(item => item && item.key));
+    const hiraUniqueOk = hiraKeySet.size === hiraItems.length;
+
+    const vocabItems = DICTIONARY.map(toGenericLearningItem);
+    const vocabCountOk = vocabItems.length === DICTIONARY.length;
+    const vocabKeyOk = vocabItems.every((item, i) => item && item.key === DICTIONARY[i].jp);
+    const vocabKeySet = new Set(vocabItems.map(item => item && item.key));
+    const vocabUniqueOk = vocabKeySet.size === vocabItems.length;
+
+    const hiraOk = hiraCountOk && hiraKeyOk && hiraUniqueOk;
+    const vocabOk = vocabCountOk && vocabKeyOk && vocabUniqueOk;
+
+    console.log(
+      `[§3-1 어댑터 점검] 히라가나: ${hiraOk ? 'OK' : 'FAIL'} (${hiraItems.length}/${HIRAGANA_LIST.length}개, key 일치 ${hiraKeyOk}, 중복 없음 ${hiraUniqueOk})`
+    );
+    console.log(
+      `[§3-1 어댑터 점검] 어휘: ${vocabOk ? 'OK' : 'FAIL'} (${vocabItems.length}/${DICTIONARY.length}개, key 일치 ${vocabKeyOk}, 중복 없음 ${vocabUniqueOk})`
+    );
+  } catch (e) {
+    console.warn('[§3-1 어댑터 점검] 실행 중 오류 — data.js의 toGenericLearningItem 확인 필요:', e);
+  }
+}
+
 /* 페이지 로드 시 연령대 라벨/버튼 상태를 실제 데이터와 동기화 */
 (function initAppLevelUI(){
+  selfCheckGenericLearningItemAdapter(); // 🆕 §3-1 — 어댑터 결과만 콘솔에서 확인, 기존 흐름엔 영향 없음
+  migrateLegacyStorageKey(MISTAKE_GARDEN_LAST_TIERS_LEGACY_KEY, MISTAKE_GARDEN_LAST_TIERS_KEY); // 🆕 §3-2 — 파일럿 1건, 구 키 데이터를 신 키로 1회 복사
+  migrateLegacyStorageKey(WS_SIZE_MANUAL_LEGACY_KEY, WS_SIZE_MANUAL_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(LAST_VOCAB_MODALITY_LEGACY_KEY, LAST_VOCAB_MODALITY_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(SELF_REFERENCE_NOTES_LEGACY_KEY, SELF_REFERENCE_NOTES_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HS_CARD_COUNT_LEGACY_KEY, HS_CARD_COUNT_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(ROLEPLAY_COMPLETIONS_LEGACY_KEY, ROLEPLAY_COMPLETIONS_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HS_STATS_LEGACY_KEY, HS_STATS_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HS_WEIGHT_LEGACY_KEY, HS_WEIGHT_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HW_STATS_LEGACY_KEY, HW_STATS_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HW_WEIGHT_LEGACY_KEY, HW_WEIGHT_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HR_STATS_LEGACY_KEY, HR_STATS_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(HR_WEIGHT_LEGACY_KEY, HR_WEIGHT_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(ACTIVE_SET_STATE_LEGACY_KEY, ACTIVE_SET_STATE_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(TODAY_LEARNED_LOG_LEGACY_KEY, TODAY_LEARNED_LOG_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(PRE_SLEEP_DISMISSED_LEGACY_KEY, PRE_SLEEP_DISMISSED_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(LEARNER_PROFILE_LEGACY_KEY, LEARNER_PROFILE_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(WORD_STATS_LEGACY_KEY, WORD_STATS_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(STREAK_LEGACY_KEY, STREAK_KEY); // 🆕 §3-2
+  migrateLegacyStorageKey(STREAK_BADGE_LEGACY_KEY, STREAK_BADGE_KEY); // 🆕 §3-2
   loadWordStats(); // 🪜 §2 단계 판정 일반화 — 히라가나 밖 단어 통계도 이제 localStorage에서 불러옴
   applyActiveStreakTheme(); // 🏅 스트릭 배지로 해금한 테마가 있으면 페이지 로드 시 바로 적용
   const countEl = document.getElementById('ageLevelCount');

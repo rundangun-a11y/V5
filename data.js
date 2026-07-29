@@ -3396,4 +3396,79 @@ const GAME_MODALITY_LABELS = {
   response: { passive: '감상하기', select: '고르기', write: '쓰기', speak: '말하기' }
 };
 
+/* ============================================================
+   Layer 1(범용 학습 엔진)용 데이터 계약 어댑터 — layering-roadmap.md §3-1
+   ============================================================
+   Layer 1의 SRS/통계 엔진이 "히라가나"나 "일본어 단어"라는 걸 몰라도 다룰 수 있도록,
+   Layer 3 원본 데이터(HIRAGANA_LIST/DICTIONARY)를 감싸서 아래 공통 형태로 변환합니다:
+     { key, displayForm, audioText, meta }
+   - key: 이 아이템을 식별하는 문자열. 기존 통계 저장소(charStats/wordStats)가 이미 원본의
+     ch/jp 문자열을 키로 그대로 쓰고 있으므로, 호환성을 위해 key도 원본 식별 필드와 똑같은
+     값을 씁니다 — 이 부분을 다른 형식으로 바꾸면 이미 저장된 사용자 학습 기록과 어긋나게
+     되므로 절대 바꾸지 말 것.
+   - displayForm: 화면에 보여줄 형태(지금은 key와 같지만, 표기 체계가 다른 학습 대상이
+     들어올 걸 대비해 처음부터 분리해둠 — 예: 나중에 "발음기호로 보여주기" 같은 대상이
+     추가되면 key는 그대로 두고 displayForm만 바꿔서 대응 가능)
+   - audioText: TTS로 읽어줄 텍스트(지금은 key와 같음)
+   - meta: 그 외 부가 정보 — 로마자, 뜻, 카테고리 등 Layer 3 고유 데이터는 전부 여기로 모음
+
+   ⚠️ 원본 HIRAGANA_LIST/DICTIONARY는 이 어댑터를 추가해도 전혀 바뀌지 않습니다. 기존 호출부
+   (entry.ch/entry.jp를 직접 읽는 기존 코드)는 이 시점에는 하나도 안 바뀌었고, 이 어댑터는
+   아직 실제 통계·게임 로직 어디에도 연결돼 있지 않습니다 — logic.js의
+   selfCheckGenericLearningItemAdapter()가 이 어댑터만 따로 검증합니다.
+   (§3-1 1단계만 완료 — 진행 상태는 layering-roadmap.md §3-1 참고, 다음 단계는 4채널/SRS
+   엔진 호출부 중 위험도 낮은 곳 1군데를 골라 이 어댑터를 통해서만 접근하도록 시범 전환하는 것) */
+function toGenericLearningItem(entry) {
+  if (!entry) return null;
+
+  if (typeof entry.ch === 'string') {
+    // 히라가나 글자 1개 (HIRAGANA_LIST 원소)
+    return {
+      key: entry.ch,
+      displayForm: entry.ch,
+      audioText: entry.ch,
+      meta: { romaji: entry.romaji }
+    };
+  }
+
+  if (typeof entry.jp === 'string') {
+    // 단어 1개 (DICTIONARY 원소)
+    return {
+      key: entry.jp,
+      displayForm: entry.jp,
+      audioText: entry.jp,
+      meta: {
+        romaji: entry.romaji,
+        kr: entry.kr,
+        emoji: entry.emoji,
+        level: entry.level,
+        category: entry.category,
+        pos: entry.pos,
+        jlpt: entry.jlpt
+      }
+    };
+  }
+
+  // 알 수 없는 형태 — 호출부에서 반드시 null 체크할 것
+  return null;
+}
+
+/* toGenericLearningItem()의 역방향 — key(=원본 ch/jp 문자열)만 갖고 있을 때 원본 entry를 찾아
+   일반화된 형태로 돌려줌. §3-1 2단계에서 "생성 후 필터링"류(computeActiveSetStageDistribution 등)는
+   이미 전환했지만, "역방향 조회"류(HIRAGANA_LIST.find(h => h.ch === key) 같은 패턴)는 아직 각
+   호출부가 직접 .find()를 하고 있어서 이걸 공용 함수로 묶어봄.
+   kind 힌트('char'|'word')를 주면 그 쪽만 찾아서 불필요한 탐색과, 이론상 ch/jp 표기가 우연히
+   같을 경우의 오판정을 피할 수 있음 — 힌트가 없으면 히라가나 쪽을 먼저 찾아봄. */
+function findGenericLearningItemByKey(key, kind) {
+  if (kind !== 'word') {
+    const hiraEntry = HIRAGANA_LIST.find(h => h.ch === key);
+    if (hiraEntry) return toGenericLearningItem(hiraEntry);
+  }
+  if (kind !== 'char') {
+    const vocabEntry = DICTIONARY.find(d => d.jp === key);
+    if (vocabEntry) return toGenericLearningItem(vocabEntry);
+  }
+  return null;
+}
+
 

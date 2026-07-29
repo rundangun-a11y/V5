@@ -5171,41 +5171,62 @@
     <br>
   </div>
 
-  <!-- ❓ '질문에 답하기' 게임 MODE CONTENT -->
+  <!-- ❓ '질문에 답하기' 게임 MODE CONTENT — 🆕 §3-5 게임엔진 표준화: 라운드제(10문제→결과화면)로 통일 -->
   <div id="qaMode" class="mode-content">
     <div class="qa-container">
       <div class="quiz-score-board">
         <div>현재 점수: <span id="qaScore">0</span>점</div>
         <div>연속 콤보: 🔥<span id="qaCombo">0</span></div>
+        <div>문제: <span id="qaProgress">0</span>/10</div>
       </div>
 
-      <div class="qa-emoji" id="qaEmoji">🍎</div>
-
-      <div class="qa-question-box">
-        <div class="qa-question-jp" id="qaQuestionJp"></div>
+      <!-- 시작 전 안내 화면 -->
+      <div id="qaStartScreen">
+        <div class="hs-start-desc">질문을 듣고 알맞은 답을 골라보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startQaGame()">🚀 게임 시작하기</button>
       </div>
 
-      <button class="quiz-audio-btn" id="qaReplayBtn" onclick="replayQaQuestion()">
-        🔊 질문 다시 듣기
-      </button>
+      <!-- 문제 풀이 화면 -->
+      <div id="qaQuestionScreen" style="display:none;">
+        <div class="qa-emoji" id="qaEmoji">🍎</div>
 
-      <div class="qa-choices" id="qaChoices">
-        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+        <div class="qa-question-box">
+          <div class="qa-question-jp" id="qaQuestionJp"></div>
+        </div>
+
+        <button class="quiz-audio-btn" id="qaReplayBtn" onclick="replayQaQuestion()">
+          🔊 질문 다시 듣기
+        </button>
+
+        <div class="qa-choices" id="qaChoices">
+          <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+        </div>
+
+        <div class="qa-feedback" id="qaFeedback"></div>
       </div>
 
-      <div class="qa-feedback" id="qaFeedback"></div>
+      <!-- 결과 화면 -->
+      <div id="qaResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="qaResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="qaResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="qaResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startQaGame()">🔄 다시 하기</button>
+      </div>
     </div>
     <br>
   </div>
 
-  <!-- 🌈 '생활 문답' 게임 MODE CONTENT (시간·온도·날씨 등 생활 질문에 답하는 게임) -->
+  <!-- 🌈 '생활 문답' 게임 MODE CONTENT (시간·온도·날씨 등 생활 질문에 답하는 게임) — 🆕 §3-5 게임엔진 표준화(전환 2/3): 라운드제(10문제→결과화면)로 통일 -->
   <div id="lifeqaMode" class="mode-content">
     <div class="qa-container">
       <div class="quiz-score-board">
         <div>현재 점수: <span id="lifeqaScore">0</span>점</div>
         <div>연속 콤보: 🔥<span id="lifeqaCombo">0</span></div>
+        <div>문제: <span id="lifeqaProgress">0</span>/10</div>
       </div>
 
+      <!-- 주제 선택은 시작 화면/문제 화면 둘 다에서 계속 보이도록 화면 전환 바깥에 둠(라운드 도중에도 주제를 바꿀 수 있던 기존 동작 유지) -->
       <div class="lifeqa-topic-select" id="lifeqaTopicSelect">
         <button class="lifeqa-topic-btn active" data-topic="all" onclick="changeLifeqaTopic('all')">전체</button>
         <button class="lifeqa-topic-btn" data-topic="clock" onclick="changeLifeqaTopic('clock')">⏰ 시간</button>
@@ -5213,50 +5234,89 @@
         <button class="lifeqa-topic-btn" data-topic="weather" onclick="changeLifeqaTopic('weather')">☀️ 날씨</button>
       </div>
 
-      <div class="lifeqa-row">
-        <div class="lifeqa-question-col qa-question-box">
-          <div class="qa-question-jp" id="lifeqaQuestionJp"></div>
+      <!-- 시작 전 안내 화면 -->
+      <div id="lifeqaStartScreen">
+        <div class="hs-start-desc">주제에 맞는 그림을 보고 알맞은 문장을 골라보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startLifeqaGame()">🚀 게임 시작하기</button>
+      </div>
+
+      <!-- 문제 풀이 화면 -->
+      <div id="lifeqaQuestionScreen" style="display:none;">
+        <div class="lifeqa-row">
+          <div class="lifeqa-question-col qa-question-box">
+            <div class="qa-question-jp" id="lifeqaQuestionJp"></div>
+          </div>
+          <div class="lifeqa-image-col" id="lifeqaImage"></div>
         </div>
-        <div class="lifeqa-image-col" id="lifeqaImage"></div>
+
+        <button class="quiz-audio-btn" id="lifeqaReplayBtn" onclick="replayLifeqaQuestion()">
+          🔊 질문 다시 듣기
+        </button>
+
+        <div class="qa-choices" id="lifeqaChoices">
+          <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+        </div>
+
+        <div class="qa-feedback" id="lifeqaFeedback"></div>
       </div>
 
-      <button class="quiz-audio-btn" id="lifeqaReplayBtn" onclick="replayLifeqaQuestion()">
-        🔊 질문 다시 듣기
-      </button>
-
-      <div class="qa-choices" id="lifeqaChoices">
-        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+      <!-- 결과 화면 -->
+      <div id="lifeqaResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="lifeqaResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="lifeqaResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="lifeqaResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startLifeqaGame()">🔄 다시 하기</button>
       </div>
-
-      <div class="qa-feedback" id="lifeqaFeedback"></div>
     </div>
     <br>
   </div>
 
+  <!-- 🏪 '가게 게임' MODE CONTENT — 🆕 §3-5 게임엔진 표준화(전환 3/3): 라운드제(10문제→결과화면)로 통일 -->
   <div id="shopMode" class="mode-content">
     <div class="qa-container">
       <div class="quiz-score-board">
         <div>현재 점수: <span id="shopScore">0</span>점</div>
         <div>연속 콤보: 🔥<span id="shopCombo">0</span></div>
+        <div>문제: <span id="shopProgress">0</span>/10</div>
       </div>
 
+      <!-- 가격표는 lifeqaTopicSelect와 같은 성격(매 문제 갱신되지만 화면 전환과 무관)이라 화면 전환 바깥에 유지 -->
       <div class="shop-items-display" id="shopItemsDisplay">
         <!-- JS가 과일/음식 이모지 4개와 가격을 넣어줍니다 -->
       </div>
 
-      <div class="qa-question-box">
-        <div class="qa-question-jp" id="shopQuestionJp"></div>
+      <!-- 시작 전 안내 화면 -->
+      <div id="shopStartScreen">
+        <div class="hs-start-desc">가격표를 보고 질문에 맞는 문장을 골라보세요! 총 10문제가 출제돼요.</div>
+        <button class="quiz-audio-btn" onclick="startShopGame()">🚀 게임 시작하기</button>
       </div>
 
-      <button class="quiz-audio-btn" id="shopReplayBtn" onclick="replayShopQuestion()">
-        🔊 질문 다시 듣기
-      </button>
+      <!-- 문제 풀이 화면 -->
+      <div id="shopQuestionScreen" style="display:none;">
+        <div class="qa-question-box">
+          <div class="qa-question-jp" id="shopQuestionJp"></div>
+        </div>
 
-      <div class="qa-choices" id="shopChoices">
-        <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+        <button class="quiz-audio-btn" id="shopReplayBtn" onclick="replayShopQuestion()">
+          🔊 질문 다시 듣기
+        </button>
+
+        <div class="qa-choices" id="shopChoices">
+          <!-- JS가 문장 선택지 4개를 번호와 함께 넣어줍니다 -->
+        </div>
+
+        <div class="qa-feedback" id="shopFeedback"></div>
       </div>
 
-      <div class="qa-feedback" id="shopFeedback"></div>
+      <!-- 결과 화면 -->
+      <div id="shopResultScreen" style="display:none;">
+        <div class="hs-result-title">🎉 결과 발표!</div>
+        <div class="hs-result-row">맞힌 문제 개수: <b><span id="shopResultCorrect">0</span> / 10</b></div>
+        <div class="hs-result-row">최고 콤보: <b>🔥<span id="shopResultMaxCombo">0</span></b></div>
+        <div class="hs-result-row hs-result-score">최종 점수: <b><span id="shopResultScore">0</span>점</b></div>
+        <button class="quiz-audio-btn" onclick="startShopGame()">🔄 다시 하기</button>
+      </div>
     </div>
     <br>
   </div>
